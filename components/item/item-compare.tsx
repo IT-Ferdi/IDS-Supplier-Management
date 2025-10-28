@@ -74,7 +74,7 @@ export default function ItemCompare({ mid }: ItemCompareProps) {
         <div className="space-y-6 text-gray-800 min-h-screen p-6">
             {/* Header */}
             <div className="flex justify-between items-center">
-                <h1 className="text-2xl font-semibold">Compare Prices</h1>
+                <h1 className="text-3xl font-bold tracking-tight">Compare Prices</h1>
                 <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm">
                     <Download className="h-4 w-4" /> Export CSV
                 </button>
