@@ -1,105 +1,41 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import ItemTable, { type Item } from '@/components/item/item-table';
+import { useState, useMemo } from 'react';
+import ItemTable from '@/components/item/item-table';
+import { useItems } from '@/hooks/useItemData'; // hook get API
+import type { ItemRow } from '@/types/item';
 
 export default function ItemDashboard() {
     const [query, setQuery] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [rows, setRows] = useState<Item[]>([]);
     const [page, setPage] = useState(1);
     const pageSize = 10;
 
-    // mock — ganti dengan fetch API kamu
-    useEffect(() => {
-        setLoading(true);
-        const mock: Item[] = [];
-        const t = setTimeout(() => {
-            setRows(mock);
-            setLoading(false);
-        }, 250);
-        return () => clearTimeout(t);
-    }, []);
+    const { data: rows = [], isLoading } = useItems();
 
-    // filter by query
     const filtered = useMemo(() => {
-        const q = query.trim().toLowerCase();
-        return rows.filter((r) => {
-            if (!q) return true;
-            return (
-                r.namaMaterial.toLowerCase().includes(q) ||
-                (r.merk ?? '').toLowerCase().includes(q)
-            );
-        });
+        const q = query.toLowerCase();
+        return q ? rows.filter((r) => r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q)) : rows;
     }, [rows, query]);
 
-    // paging (client)
     const pageStart = (page - 1) * pageSize;
     const paged = filtered.slice(pageStart, pageStart + pageSize);
 
-    const handleExportCsv = () => {
-        const header = [
-            'namaMaterial',
-            'merk',
-            'dimensi',
-            'berat',
-            'penggunaan',
-            'visualQc',
-            'dimensiQc',
-            'fungsiQc',
-            'suhuKelembapan',
-            'posisiPeletakan',
-            'keamananPerlindungan',
-            'shelfLife',
-        ];
-        const csv =
-            [header.join(',')]
-                .concat(
-                    filtered.map((r) =>
-                        [
-                            r.namaMaterial,
-                            r.merk ?? '',
-                            r.dimensi ?? '',
-                            r.berat ?? '',
-                            r.penggunaan ?? '',
-                            r.visualQc ?? '',
-                            r.dimensiQc ?? '',
-                            r.fungsiQc ?? '',
-                            r.suhuKelembapan ?? '',
-                            r.posisiPeletakan ?? '',
-                            r.keamananPerlindungan ?? '',
-                            r.shelfLife ?? '',
-                        ]
-                            .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-                            .join(','),
-                    ),
-                )
-                .join('\n');
-
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'items.csv';
-        a.click();
-        URL.revokeObjectURL(url);
-    };
-
     return (
-        <main className="p-4">
+        <div className="p-4 space-y-4">
             <ItemTable
                 data={paged}
-                loading={loading}
+                loading={isLoading}
                 query={query}
-                onQueryChange={setQuery}
+                onQueryChange={(q) => {
+                    setQuery(q);
+                    setPage(1);
+                }}
                 page={page}
                 pageSize={pageSize}
                 total={filtered.length}
                 onPageChange={setPage}
-                onAdd={() => alert('Tambah Item')}
-                onExportCsv={handleExportCsv}
-                onRowClick={(r) => alert(`Open item ${r.id}`)}
+                onAdd={() => (window.location.href = '/item/new')}
             />
-        </main>
+        </div>
     );
 }
