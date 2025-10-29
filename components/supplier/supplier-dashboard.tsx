@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import SupplierTable from '@/components/supplier/supplier-table';
+import type { Supplier } from '@/components/supplier/supplier-table';
+import SupplierDetailPanel from './supplier-detail-panel';
 import { useSuppliers } from '@/hooks/useSupplierData';
 import type { SupplierRow } from '@/types/supplier';
 
@@ -57,6 +59,7 @@ export default function SupplierDashboard() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<Supplier | null>(null);
   const pageSize = 10;
 
   const { data: rows = [], isLoading, error } = useSuppliers();
@@ -98,7 +101,7 @@ export default function SupplierDashboard() {
           paymentTerms: r.payment_terms_template ?? undefined,
           updatedAt: undefined,
           categories: cats.length ? cats : undefined,
-          rating: r.rating ?? undefined, 
+          rating: r.rating ?? undefined,
           raw: r,
         };
       }),
@@ -140,7 +143,7 @@ export default function SupplierDashboard() {
   }
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="relative p-4 space-y-4 overflow-hidden">
       <SupplierTable
         data={tableData}
         loading={isLoading}
@@ -160,7 +163,22 @@ export default function SupplierDashboard() {
         onPageChange={setPage}
         onAdd={() => (window.location.href = '/supplier/new')}
         onExportCsv={handleExportCsv}
+        onRowClick={(row) => setSelected(row)}
       />
+
+      {/* PANEL SLIDE OVER */}
+      {selected && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/30 z-40"
+            onClick={() => setSelected(null)}
+          />
+          <SupplierDetailPanel
+            supplier={selected}
+            onClose={() => setSelected(null)}
+          />
+        </>
+      )}
     </div>
   );
 }

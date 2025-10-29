@@ -97,12 +97,9 @@ export default function NonErpSection({
         [tops]
     );
 
-    // Daftar ID terpilih saat ini (fallback [] jika belum ada)
     const selectedTopIds = value.payment_terms_ids ?? [];
 
-    // Handler multi-select
     const handleTopPickMulti = (ids: string[]) => {
-        // Ambil item sesuai ids → untuk ditampilkan sebagai ringkasan nama
         const picked = ids
             .map((id) => tops.find((t) => String(t.id) === id))
             .filter(Boolean) as typeof tops;
@@ -110,14 +107,13 @@ export default function NonErpSection({
         const display = picked.map((t) => t.nama ?? String(t.id)).join(', ');
 
         onChange({
-            payment_terms_ids: ids,          // simpan array id
-            payment_terms_template: display, // ringkasan nama (untuk tampil)
-            top_credit_days: null,           // multi: tidak ada satu angka pasti
+            payment_terms_ids: ids,  
+            payment_terms_template: display,
+            top_credit_days: null,   
         });
     };
 
 
-    // Kelas untuk field required: border & ring merah ketika invalid
     const reqClass =
         'required aria-required:true invalid:ring-2 invalid:ring-rose-300 invalid:border-rose-400';
 

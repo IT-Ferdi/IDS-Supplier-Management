@@ -17,7 +17,7 @@ export type Supplier = {
   paymentTerms?: string;
   categories?: string[];
   rating?: number;
-  updatedAt?: string | Date;
+  updatedAt?: string;
 
   /** Data asli dari API (bisa bentuk apa saja) */
   raw?: unknown;
@@ -143,8 +143,7 @@ export default function SupplierTable({
                   'Phone',
                   'Payment Terms',
                   'Categories',
-                  'Rating',
-                  '',
+                  'Rating'
                 ].map((h) => (
                   <th key={h} className="px-4 py-3 font-medium">
                     {h}
@@ -166,7 +165,8 @@ export default function SupplierTable({
                 data.map((s, i) => (
                   <tr
                     key={s.code || `${i}-${s.name}`}
-                    className={`border-t border-slate-100 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'} hover:bg-sky-50`}
+                    className={`border-t border-slate-100 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
+                      } hover:bg-sky-50 cursor-pointer`}
                     onClick={() => onRowClick?.(s)}
                   >
                     <td className="px-4 py-3 font-mono text-slate-700">{s.code}</td>
@@ -214,19 +214,6 @@ export default function SupplierTable({
                     <td className="px-4 py-3">
                       <StarRating value={s.rating ?? 0} readOnly size={16} step={0.5} />
                     </td>
-
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-slate-700 shadow-sm transition hover:bg-slate-50 hover:shadow-md"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setViewing(s);
-                        }}
-                      >
-                        View
-                      </button>
-                    </td>
                   </tr>
                 ))
               )}
@@ -261,13 +248,6 @@ export default function SupplierTable({
           </div>
         </div>
       </div>
-
-      {/* MODAL DETAIL SUPPLIER */}
-      {viewing && (
-        <Dialog onClose={() => setViewing(null)}>
-          <SupplierDetailContent supplier={viewing} onClose={() => setViewing(null)} />
-        </Dialog>
-      )}
     </div>
   );
 }

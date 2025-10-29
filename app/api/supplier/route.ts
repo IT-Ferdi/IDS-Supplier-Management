@@ -129,41 +129,66 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Field "nama" wajib diisi' }, { status: 400 });
     }
 
-    // Generate auto-increment ID
     const newId = await getNextSupplierId();
 
-    // Build dokumen
+    const categories = normalizeCategories(body.categories);
+
+    let templates: string[] = [];
+    if (Array.isArray(body.payment_terms_template)) {
+      templates = body.payment_terms_template
+        .map((t) => (typeof t === 'string' ? t.trim() : ''))
+        .filter((t) => t.length > 0);
+    } else if (typeof body.payment_terms_template === 'string') {
+      templates = body.payment_terms_template
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+    }
+
+    const payment_terms =
+      Array.isArray(body.payment_terms) && body.payment_terms.length > 0
+        ? body.payment_terms 
+        : templates.length > 0
+          ? templates.map((t) => ({
+            description: t,
+            value: 0, 
+          }))
+          : null;
+
     const doc: SupplierNonErp = {
       ...defaultNonErp,
       id: newId,
       nama,
-      alamat_pusat: body.alamat_pusat ?? defaultNonErp.alamat_pusat,
-      kota_pusat: body.kota_pusat ?? defaultNonErp.kota_pusat,
-      telp_sales: body.telp_sales ?? defaultNonErp.telp_sales,
-      email_sales: body.email_sales ?? defaultNonErp.email_sales,
-      telp_finance: body.telp_finance ?? defaultNonErp.telp_finance,
-      email_finance: body.email_finance ?? defaultNonErp.email_finance,
-      no_npwp: body.no_npwp ?? defaultNonErp.no_npwp,
-      nik: body.nik ?? defaultNonErp.nik,
-      alamat_pajak: body.alamat_pajak ?? defaultNonErp.alamat_pajak,
-      payment_terms_template: body.payment_terms_template ?? defaultNonErp.payment_terms_template,
-      rating: body.rating ?? defaultNonErp.rating,
-      payment_terms: body.payment_terms ?? defaultNonErp.payment_terms,
-      categories: normalizeCategories(body.categories), // simpan kategori
+      alamat_pusat: body.alamat_pusat ?? null,
+      kota_pusat: body.kota_pusat ?? null,
+      telp_sales: body.telp_sales ?? null,
+      email_sales: body.email_sales ?? null,
+      telp_finance: body.telp_finance ?? null,
+      email_finance: body.email_finance ?? null,
+      no_npwp: body.no_npwp ?? null,
+      nik: body.nik ?? null,
+      alamat_pajak: body.alamat_pajak ?? null,
+      payment_terms_template: templates.join(', ') || null,
+      rating: body.rating ?? null,
+      payment_terms,
+      categories,
       created_at: new Date(),
       updated_at: new Date(),
     };
 
+    // Simpan ke DB
     const client = await clientPromise;
     const db = client.db(DB_NAME);
     const collection = db.collection(COLL_SUPPLIER);
 
-    // (opsional, tapi disarankan di konsol): db.master_supplier.createIndex({ id: 1 }, { unique: true, sparse: true })
-
     const { insertedId } = await collection.insertOne(doc);
-    return NextResponse.json({ insertedId, ok: true, data: { ...doc, _id: insertedId } }, { status: 201 });
+    return NextResponse.json(
+      { insertedId, ok: true, data: { ...doc, _id: insertedId } },
+      { status: 201 }
+    );
   } catch (error) {
     console.error('Error creating supplier:', error);
     return NextResponse.json({ error: 'Failed to create supplier' }, { status: 500 });
   }
 }
+

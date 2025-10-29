@@ -18,8 +18,11 @@ import AttachmentsSection, {
 } from './forms/attachment-section';
 import NonErpSection, { type NonErpFormState } from '@/components/supplier/forms/non-erp-supplier-section';
 import Swal from 'sweetalert2';
+import { useTopData } from '@/hooks/useTopData';
+import type { TopItem } from '@/hooks/useTopData';
 
 export default function AddSupplierForm() {
+    const { data: topData } = useTopData();
     const [mode, setMode] = useState<TemplateMode>('NON_ERP');
 
     // ====== ERP state
@@ -107,7 +110,6 @@ export default function AddSupplierForm() {
         'payment_terms_template', 'categories',
     ];
 
-    // payload builder untuk ERP (JSON only; tanpa file)
     const buildErpPayload = (): ErpPayload =>
         emptyToNull<ErpPayload>({
             source: 'ERP',
@@ -126,15 +128,43 @@ export default function AddSupplierForm() {
             },
         });
 
-    // payload builder untuk Non-ERP (TOP dari hook di NonErpSection)
-    const buildNonErpPayload = (): NonErpPayload => {
-        // bentuk payment_terms dari TOP (template + credit days)
-        let payment_terms: NonErpPayload['payment_terms'] = null;
-        if (nonErp.payment_terms_template && typeof nonErp.top_credit_days === 'number') {
-            payment_terms = [
-                { description: nonErp.payment_terms_template ?? null, value: nonErp.top_credit_days ?? null },
-            ];
-        }
+    const buildNonErpPayload = (topData: TopItem[]): NonErpPayload => {
+        const selectedTemplates = Array.isArray(nonErp.payment_terms_template)
+            ? nonErp.payment_terms_template
+            : nonErp.payment_terms_template
+                ? [nonErp.payment_terms_template]
+                : [];
+
+        const payment_terms =
+            typeof nonErp.payment_terms_template === 'string'
+                ? nonErp.payment_terms_template
+                    .split(',')
+                    .map((t) => t.trim())
+                    .filter(Boolean)
+                    .map((t) => {
+                        const found = topData.find(
+                            (top) =>
+                                top.nama.trim().toLowerCase() === t.toLowerCase() ||
+                                top.id.trim().toLowerCase() === t.toLowerCase()
+                        );
+
+                        const creditDays = found?.credit_days ?? 0;
+
+                        console.log('🔍 Matching TOP:', {
+                            template: t,
+                            foundNama: found?.nama,
+                            foundCreditDays: found?.credit_days,
+                            usedValue: creditDays,
+                        });
+
+                        return {
+                            description: t,
+                            value: creditDays,
+                        };
+                    })
+                : null;
+
+
 
         const ratingNormalized =
             typeof nonErp.rating === 'number'
@@ -155,9 +185,9 @@ export default function AddSupplierForm() {
             no_npwp: nonErp.no_npwp ?? null,
             nik: nonErp.nik ?? null,
             alamat_pajak: nonErp.alamat_pajak ?? null,
-            payment_terms_template: nonErp.payment_terms_template ?? null,
-            rating: ratingNormalized,
+            payment_terms_template: selectedTemplates.join(', '),
             payment_terms,
+            rating: ratingNormalized,
             categories: nonErp.categories ?? null,
         });
     };
@@ -166,30 +196,29 @@ export default function AddSupplierForm() {
         try {
             let payload: ErpPayload | NonErpPayload;
 
-            if (mode === 'NON_ERP') {
-                // cek field wajib
+            if (mode === "NON_ERP") {
                 const hasBlank = REQUIRED_NON_ERP.some((k) =>
                     isEmptyValue((nonErp as UnknownRecord)[k])
                 );
 
                 if (hasBlank) {
                     await Swal.fire({
-                        icon: 'warning',
-                        title: 'Data belum lengkap',
-                        text: 'Silakan lengkapi semua field wajib dengan format yang benar.',
-                        confirmButtonText: 'OK',
+                        icon: "warning",
+                        title: "Data belum lengkap",
+                        text: "Silakan lengkapi semua field wajib dengan format yang benar.",
+                        confirmButtonText: "OK",
                     });
                     return;
                 }
 
-                payload = buildNonErpPayload();
+                payload = buildNonErpPayload(topData);
             } else {
                 if (!detail.companyName?.trim()) {
                     await Swal.fire({
-                        icon: 'warning',
-                        title: 'Data belum lengkap',
-                        text: 'Nama Perusahaan (ERP) wajib diisi.',
-                        confirmButtonText: 'OK',
+                        icon: "warning",
+                        title: "Data belum lengkap",
+                        text: "Nama Perusahaan (ERP) wajib diisi.",
+                        confirmButtonText: "OK",
                     });
                     return;
                 }
@@ -197,71 +226,94 @@ export default function AddSupplierForm() {
             }
 
             const { isConfirmed } = await Swal.fire({
-                title: 'Simpan supplier?',
-                text: 'Data akan disimpan ke database.',
-                icon: 'question',
+                title: "Simpan supplier?",
+                text: "Data akan disimpan ke database.",
+                icon: "question",
                 showCancelButton: true,
-                confirmButtonText: 'Simpan',
-                cancelButtonText: 'Batal',
+                confirmButtonText: "Simpan",
+                cancelButtonText: "Batal",
             });
+
             if (!isConfirmed) return;
 
-            await Swal.fire({
-                title: 'Menyimpan…',
-                allowEscapeKey: false,
-                allowOutsideClick: false,
-                showConfirmButton: false,
-                didOpen: () => Swal.showLoading(),
-            });
-
             try {
-                const res = await fetch('/api/supplier', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                const res = await fetch("/api/supplier", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),
                 });
 
-                const data = (await res.json().catch(() => null)) as ApiOk | ApiErr | null;
+                const rawText = await res.text(); // tangkap raw dulu
+                let data: any = null;
+                try {
+                    data = JSON.parse(rawText);
+                } catch {
+                    console.warn("Response bukan JSON valid:", rawText);
+                }
+
                 if (!res.ok) {
-                    const msg = (data && 'error' in (data as ApiErr) && (data as ApiErr).error) || 'Gagal menyimpan supplier';
-                    throw new Error(msg || 'Gagal menyimpan supplier');
+                    const msg =
+                        (data && data.error) || "Gagal menyimpan supplier (server error)";
+                    throw new Error(msg);
                 }
 
                 Swal.close();
 
                 await Swal.fire({
-                    icon: 'success',
-                    title: 'Berhasil',
-                    text: 'Supplier berhasil disimpan.',
+                    icon: "success",
+                    title: "Berhasil",
+                    text: "Supplier berhasil disimpan.",
                     timer: 1500,
                     showConfirmButton: false,
                 });
 
-                if (mode === 'NON_ERP') {
+                if (mode === "NON_ERP") {
                     setNonErp({});
                 } else {
-                    setDetail({ companyName: '', companyType: undefined, groupAffiliation: '', industry: '' });
+                    setDetail({
+                        companyName: "",
+                        companyType: undefined,
+                        groupAffiliation: "",
+                        industry: "",
+                    });
                     setOffice({ hq: { ...emptyAddr }, branch: { ...emptyAddr } });
-                    setContact({ sales: { ...EMPTY_CONTACT }, finance: { ...EMPTY_CONTACT } });
+                    setContact({
+                        sales: { ...EMPTY_CONTACT },
+                        finance: { ...EMPTY_CONTACT },
+                    });
                     setPayment(EMPTY_PAYMENT);
                     setTax(EMPTY_TAX);
                     setAttachments(EMPTY_ATTACHMENTS);
                     setAttachmentErrors({});
                 }
+
             } catch (err: unknown) {
+                // ✅ Pastikan loading Swal ditutup walau error
                 Swal.close();
-                const msg = err instanceof Error ? err.message : 'Terjadi kesalahan saat menyimpan.';
-                await Swal.fire({ icon: 'error', title: 'Gagal', text: msg, confirmButtonText: 'OK' });
+
+                const msg =
+                    err instanceof Error
+                        ? err.message
+                        : "Terjadi kesalahan saat menyimpan.";
+                await Swal.fire({
+                    icon: "error",
+                    title: "Gagal",
+                    text: msg,
+                    confirmButtonText: "OK",
+                });
             }
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : 'Terjadi kesalahan saat menyimpan.';
-            await Swal.fire({ icon: 'error', title: 'Gagal', text: msg, confirmButtonText: 'OK' });
+            Swal.close();
+            const msg =
+                e instanceof Error ? e.message : "Terjadi kesalahan saat menyimpan.";
+            await Swal.fire({
+                icon: "error",
+                title: "Gagal",
+                text: msg,
+                confirmButtonText: "OK",
+            });
         }
     };
-
-
-
-
 
     const handleReset = () => {
         if (mode === 'ERP') {
