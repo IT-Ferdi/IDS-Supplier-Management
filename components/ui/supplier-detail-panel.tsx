@@ -65,7 +65,7 @@ function TransactionTable({ supplierName }: { supplierName: string }) {
                                 {tx.status}
                             </Badge>
                             <p className="font-medium mt-1">
-                                Rp{((tx.qty ?? 0) * (tx.rate ?? 0)).toLocaleString('id-ID')}
+                                Rp{(tx.rate ?? 0).toLocaleString('id-ID')}
                             </p>
                         </div>
                     </div>
