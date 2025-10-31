@@ -1,16 +1,17 @@
 'use client';
 
 import { Plus, Search, Scale } from 'lucide-react';
-import type { ItemRow } from '@/types/item';
+import type { Item } from '@/types/item';
 
 interface ItemTableProps {
-    data: ItemRow[];
+    data: Item[];
     loading?: boolean;
     query?: string;
     onQueryChange?: (q: string) => void;
     page: number;
     pageSize: number;
     total: number;
+    onRowClick?: (item: Item) => void;
     onPageChange?: (p: number) => void;
     onAdd?: () => void;
     className?: string;
@@ -24,6 +25,7 @@ export default function ItemTable({
     page,
     pageSize,
     total,
+    onRowClick,
     onPageChange,
     onAdd,
     className,
@@ -95,6 +97,7 @@ export default function ItemTable({
                                 data.map((item, i) => (
                                     <tr
                                         key={item.id || `${i}-${item.name}`}
+                                        onClick={() => onRowClick?.(item)}
                                         className={`border-t border-slate-100 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
                                             } hover:bg-sky-50`}
                                     >

@@ -2,15 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useItems } from '@/hooks/useItemData';
-import { ArrowDown, ArrowUp, Building2, Star, Download } from 'lucide-react';
+import { Building2, Star, Download } from 'lucide-react';
+import { Supplier } from '@/types/supplier';
 import type { ItemRow } from '@/types/item';
-
-interface Supplier {
-    id: string;
-    nama: string;
-    rating?: number;
-    items?: [string, number][];
-}
+import SupplierDetailPanel from '@/components/ui/supplier-detail-panel';
 
 interface ItemCompareProps {
     mid: string;
@@ -20,6 +15,19 @@ export default function ItemCompare({ mid }: ItemCompareProps) {
     const { data: items, isLoading: isItemsLoading } = useItems();
     const [suppliers, setSuppliers] = useState<(Supplier & { price: number })[]>([]);
     const [loadingSuppliers, setLoadingSuppliers] = useState(true);
+    const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
+    const [isPanelOpen, setIsPanelOpen] = useState(false)
+
+    const openPanel = (supplier: Supplier) => {
+        console.log("Selected supplier:", supplier);
+        setSelectedSupplier(supplier)
+        setIsPanelOpen(true)
+    }
+
+    const closePanel = () => {
+        setIsPanelOpen(false)
+        setTimeout(() => setSelectedSupplier(null), 300)
+    }
 
     useEffect(() => {
         async function fetchSuppliers() {
@@ -71,10 +79,10 @@ export default function ItemCompare({ mid }: ItemCompareProps) {
         return <div className="p-6 text-gray-500">Item tidak ditemukan.</div>;
 
     return (
-        <div className="space-y-6 text-gray-800 min-h-screen p-6">
+        <div className="space-y-6 text-gray-800 bg-white min-h-screen p-6">
             {/* Header */}
             <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold tracking-tight">Compare Prices</h1>
+                <h1 className="text-2xl font-semibold">Compare Prices</h1>
                 <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm">
                     <Download className="h-4 w-4" /> Export CSV
                 </button>
@@ -152,8 +160,8 @@ export default function ItemCompare({ mid }: ItemCompareProps) {
                             suppliers.map((s, i) => (
                                 <tr
                                     key={s.id}
-                                    className={`border-t border-gray-200 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                                        } hover:bg-gray-100`}
+                                    onClick={() => openPanel(s)}
+                                    className={`cursor-pointer border-t border-gray-200 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors`}
                                 >
                                     <td className="px-4 py-3 flex items-center gap-2">
                                         <Building2 className="h-4 w-4 text-gray-500" />
@@ -177,6 +185,19 @@ export default function ItemCompare({ mid }: ItemCompareProps) {
                     </tbody>
                 </table>
             </div>
+
+            {selectedSupplier && (
+                <>
+                    <div
+                        className="fixed inset-0 bg-black/30 z-40"
+                        onClick={() => setSelectedSupplier(null)}
+                    />
+                    <SupplierDetailPanel
+                        supplier={selectedSupplier}
+                        onClose={() => setSelectedSupplier(null)}
+                    />
+                </>
+            )}
         </div>
     );
 }

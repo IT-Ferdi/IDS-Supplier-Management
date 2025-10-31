@@ -1,10 +1,79 @@
 'use client';
 
-import { X } from 'lucide-react';
+import { X, ExternalLink } from 'lucide-react';
 import StarRating from '@/components/ui/star-rating';
-import type { Supplier } from '@/components/supplier/supplier-table';
+import type { Supplier } from '@/types/supplier';
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { useTransactionData } from "@/hooks/useTransactionData";
+
+function TransactionTable({ supplierName }: { supplierName: string }) {
+    const { data, loading, error } = useTransactionData();
+
+    const supplierTransactions = data.filter(
+        (tx) => tx.supplier_name?.toLowerCase() === supplierName?.toLowerCase()
+    );
+
+    if (loading) return <p className="text-sm text-slate-500">Loading transactions...</p>;
+    if (error) return <p className="text-sm text-red-500">Error loading transactions</p>;
+    if (supplierTransactions.length === 0)
+        return <p className="text-sm text-slate-500">No transactions found for this supplier.</p>;
+
+    return (
+        <Card>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+                {supplierTransactions.map((tx, index) => (
+                    <div
+                        key={tx._id}
+                        className="flex items-center justify-between p-2 bg-muted rounded-md cursor-pointer hover:bg-muted/80 transition-colors"
+                    >
+                        {/* Left side */}
+                        <div className="flex-1">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
+                                    {index + 1}
+                                </div>
+                                <div>
+                                    <p className="font-medium">{tx.name}</p>
+                                    <p className="text-sm text-muted-foreground">{tx.item_name}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Qty: {tx.qty ?? 0} @ Rp{(tx.rate ?? 0).toLocaleString('id-ID')}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Date: {tx.transaction_date
+                                            ? new Date(tx.transaction_date).toLocaleDateString('id-ID')
+                                            : '-'}
+                                    </p>
+                                </div>
+                                <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                        </div>
+
+                        {/* Right side */}
+                        <div className="text-right">
+                            <Badge
+                                variant="secondary"
+                                className={`${tx.status === 'Completed'
+                                        ? 'bg-green-100 text-green-700 border border-green-200'
+                                        : tx.status === 'Pending'
+                                            ? 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                                            : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                    }`}
+                            >
+                                {tx.status}
+                            </Badge>
+                            <p className="font-medium mt-1">
+                                Rp{((tx.qty ?? 0) * (tx.rate ?? 0)).toLocaleString('id-ID')}
+                            </p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </Card>
+    );
+}
 
 export default function SupplierDetailPanel({
     supplier,
@@ -15,8 +84,11 @@ export default function SupplierDetailPanel({
 }) {
     const raw = (supplier?.raw ?? {}) as Record<string, any>;
 
+    // 🔹 Lebih aman: ambil dari raw dulu, fallback ke supplier
     const safe = (key: string): string => {
-        const v = raw[key];
+        const fromRaw = raw[key];
+        const fromMain = (supplier as any)?.[key];
+        const v = fromRaw ?? fromMain;
         return typeof v === 'string' ? v : v == null ? '-' : String(v);
     };
 
@@ -65,20 +137,16 @@ export default function SupplierDetailPanel({
                         initial={{ x: '100%' }}
                         animate={{ x: 0 }}
                         exit={{ x: '100%' }}
-                        transition={{
-                            type: 'spring',
-                            stiffness: 260,
-                            damping: 30,
-                        }}
+                        transition={{ type: 'spring', stiffness: 260, damping: 30 }}
                         className="fixed inset-y-0 right-0 z-50 w-full max-w-lg bg-white shadow-2xl overflow-y-auto rounded-l-2xl"
                     >
                         {/* HEADER */}
                         <div className="flex items-center justify-between border-b px-6 py-4 bg-gradient-to-r from-sky-500 to-indigo-500 text-white">
                             <div>
                                 <h2 className="text-lg font-semibold leading-tight">
-                                    {supplier?.name ?? 'Supplier Detail'}
+                                    {supplier?.nama ?? supplier?.name ?? 'Supplier Detail'}
                                 </h2>
-                                <h2 className="text-xm">{supplier?.code ?? '-'}</h2>
+                                <h2 className="text-xs opacity-90">{supplier?.code ?? '-'}</h2>
                             </div>
                             <button
                                 onClick={onClose}
@@ -112,12 +180,7 @@ export default function SupplierDetailPanel({
                             {/* Rating */}
                             <section>
                                 <h3 className="text-sm font-medium text-slate-600 mb-1">Rating</h3>
-                                <StarRating
-                                    value={supplier.rating ?? 0}
-                                    readOnly
-                                    size={18}
-                                    step={0.5}
-                                />
+                                <StarRating value={supplier.rating ?? 0} readOnly size={18} step={0.5} />
                             </section>
 
                             {/* Payment Terms */}
@@ -125,9 +188,7 @@ export default function SupplierDetailPanel({
                                 <h3 className="text-sm font-medium text-slate-600 mb-1">
                                     Payment Terms Template
                                 </h3>
-                                <div className="text-slate-800 text-sm">
-                                    {safe('payment_terms_template')}
-                                </div>
+                                <div className="text-slate-800 text-sm">{safe('payment_terms_template')}</div>
 
                                 <h3 className="text-sm font-medium text-slate-600 mt-3 mb-1">
                                     Payment Terms Detail
@@ -186,9 +247,15 @@ export default function SupplierDetailPanel({
                                 <h3 className="text-sm font-medium text-slate-600 mb-1">Last Updated</h3>
                                 <div className="text-sm text-slate-800">
                                     {supplier.updatedAt
-                                        ? new Date(supplier.updatedAt).toLocaleString()
+                                        ? new Date(supplier.updatedAt).toLocaleString('id-ID')
                                         : '-'}
                                 </div>
+                            </section>
+
+                            {/* Transactions */}
+                            <section>
+                                <h3 className="text-sm font-medium text-slate-600 mb-2">Transactions</h3>
+                                <TransactionTable supplierName={supplier?.nama ?? supplier?.name ?? ''} />
                             </section>
                         </div>
                     </motion.div>

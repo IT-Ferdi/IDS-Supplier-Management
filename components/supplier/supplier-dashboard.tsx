@@ -3,21 +3,18 @@
 import { useMemo, useState } from 'react';
 import SupplierTable from '@/components/supplier/supplier-table';
 import type { Supplier } from '@/components/supplier/supplier-table';
-import SupplierDetailPanel from './supplier-detail-panel';
+import SupplierDetailPanel from '../ui/supplier-detail-panel';
 import { useSuppliers } from '@/hooks/useSupplierData';
 import type { SupplierRow } from '@/types/supplier';
 
-/** Normalisasi string aman */
 const norm = (v: unknown) => String(v ?? '').toLowerCase().trim();
 
-/** Status default: ACTIVE jika tidak ada/invalid */
 function getStatus(row: SupplierRow & { status?: unknown }): 'ACTIVE' | 'INACTIVE' {
   const raw = row.status;
   if (!raw) return 'ACTIVE';
   return String(raw).toUpperCase() === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE';
 }
 
-/** Ambil categories dari beberapa kemungkinan field tanpa any */
 function pickCategories(r: SupplierRow | Record<string, unknown>): string[] {
   const obj = r as Record<string, unknown>;
   const src =

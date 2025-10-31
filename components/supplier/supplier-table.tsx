@@ -143,7 +143,7 @@ export default function SupplierTable({
                   'Phone',
                   'Payment Terms',
                   'Categories',
-                  'Rating'
+                  'Rating',
                 ].map((h) => (
                   <th key={h} className="px-4 py-3 font-medium">
                     {h}

@@ -6,3 +6,12 @@ export interface ItemRow {
     uom?: string | null;
     category?: string;
 }
+
+export type Item = {
+    id: string;       
+    name: string;
+    description?: string;
+    brand?: string;
+    uom?: string | null;
+    category?: string;
+}

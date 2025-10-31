@@ -19,6 +19,7 @@ type SupplierDoc = {
     payment_terms_template?: string | null;
     payment_terms?: string | null;
     rating?: number | null;
+    items?: [string, number][] | null;
     categories?: string[] | null;
 };
 
@@ -37,6 +38,7 @@ const normalize = (d: SupplierDoc): SupplierRow => ({
     payment_terms_template: d.payment_terms_template ?? null,
     payment_terms: d.payment_terms ?? null,
     rating: d.rating ?? 0,
+    items: d.items ?? [],
     categories: d.categories ?? null,
 });
 
@@ -49,7 +51,6 @@ async function fetchSuppliers(): Promise<SupplierRow[]> {
     return arr.map(normalize);
 }
 
-/** Hook utama */
 export function useSuppliers() {
     return useQuery({
         queryKey: ['suppliers'],
