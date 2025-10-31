@@ -15,7 +15,7 @@ export function useTransactionData() {
                     throw new Error(`HTTP error! status: ${res.status}`);
                 }
                 const json = await res.json();
-                setData(json.data || json); // tergantung struktur respons API kamu
+                setData(json.data || json);
             } catch (err) {
                 console.error('Failed to fetch transactions:', err);
                 setError((err as Error).message);

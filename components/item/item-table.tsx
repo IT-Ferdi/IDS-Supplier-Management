@@ -121,8 +121,11 @@ export default function ItemTable({
                                         <td className="px-4 py-3 text-right">
                                             <button
                                                 type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    window.location.href = `/item/compare/${item.id}`;
+                                                }}
                                                 className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-1.5 text-slate-700 shadow-sm transition hover:bg-slate-50 hover:shadow-md"
-                                                onClick={() => (window.location.href = `/item/compare/${item.id}`)}
                                             >
                                                 <Scale className="h-4 w-4 text-sky-600" />
                                                 Compare
