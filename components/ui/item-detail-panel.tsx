@@ -1,11 +1,14 @@
 'use client';
 
-import { X, Package, Building2 } from 'lucide-react';
+import { X, Package, Building2, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useSuppliers } from "@/hooks/useSupplierData";
+import { useEffect, useMemo, useState } from 'react';
+import { useTransactionData } from '@/hooks/useTransactionData';
 import type { Item } from '@/types/item';
+import type { Supplier } from '@/types/supplier';
+import type { Transaction } from '@/types/transaction';
 
 export default function ItemDetailPanel({
     item,
@@ -14,25 +17,100 @@ export default function ItemDetailPanel({
     item: Item | null;
     onClose: () => void;
 }) {
-    const { data: suppliers, isLoading, error } = useSuppliers();
+    const { data: transactions, loading: loadingTransactions } = useTransactionData();
 
-    // 🧠 Filter supplier yang menyediakan item ini berdasarkan item.id
-    const relatedSuppliers = (suppliers ?? [])
-        .map((s) => {
-            if (!Array.isArray(s.items)) return null;
+    const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+    const [loadingSuppliers, setLoadingSuppliers] = useState(true);
 
-            // asumsi struktur s.items = [["MID-0001", 12000], ["MID-0002", 34000]]
-            const found = s.items.find((i: any) =>
-                i[0]?.toLowerCase() === item?.id?.toLowerCase()
+    // Fetch supplier data
+    useEffect(() => {
+        async function fetchSuppliers() {
+            try {
+                setLoadingSuppliers(true);
+                const res = await fetch('/api/supplier', { cache: 'no-store' });
+                if (!res.ok) throw new Error('Failed to fetch suppliers');
+                const data: Supplier[] = await res.json();
+                setSuppliers(data);
+            } catch (err) {
+                console.error('Error fetching suppliers:', err);
+            } finally {
+                setLoadingSuppliers(false);
+            }
+        }
+        fetchSuppliers();
+    }, []);
+
+    // Filter transaksi berdasarkan item.id
+    const filteredTransactions = useMemo(() => {
+        if (!item) return [];
+        return transactions.filter(
+            (tx: Transaction) =>
+                tx.item_code?.toLowerCase() === item.id.toLowerCase()
+        );
+    }, [transactions, item]);
+
+    // Ambil transaksi terbaru tiap supplier
+    const latestBySupplier = useMemo(() => {
+        const grouped: Record<string, Transaction[]> = {};
+        filteredTransactions.forEach((tx) => {
+            if (!grouped[tx.supplier]) grouped[tx.supplier] = [];
+            grouped[tx.supplier].push(tx);
+        });
+
+        const latest: {
+            supplier_id: string;
+            supplier_name: string;
+            last_transaction: string;
+            rate_per_unit: number;
+        }[] = [];
+
+        Object.entries(grouped).forEach(([supplier_id, txs]) => {
+            const sorted = txs.sort(
+                (a, b) =>
+                    new Date(b.transaction_date).getTime() -
+                    new Date(a.transaction_date).getTime()
             );
-            if (!found) return null;
+            const latestTx = sorted[0];
+            const ratePerUnit = latestTx.qty > 0 ? latestTx.rate / latestTx.qty : 0;
+            latest.push({
+                supplier_id,
+                supplier_name: latestTx.supplier_name,
+                last_transaction: latestTx.transaction_date,
+                rate_per_unit: ratePerUnit,
+            });
+        });
 
+        return latest;
+    }, [filteredTransactions]);
+
+    // Gabungkan dengan data supplier
+    const suppliersWithDetail = useMemo(() => {
+        return latestBySupplier.map((tx) => {
+            const supplierDetail = suppliers.find((s) => s.id === tx.supplier_id);
             return {
-                ...s,
-                price: found[1], // ambil harga dari index ke-1
+                ...tx,
+                rating: supplierDetail?.rating ?? '-',
+                detail: supplierDetail ?? null,
             };
-        })
-        .filter(Boolean);
+        });
+    }, [latestBySupplier, suppliers]);
+
+    // Summary (lowest, median, highest)
+    const stats = useMemo(() => {
+        if (!suppliersWithDetail.length) return null;
+        const prices = suppliersWithDetail.map((s) => s.rate_per_unit).sort((a, b) => a - b);
+        const cheapest = prices[0];
+        const median = prices[Math.floor(prices.length / 2)];
+        const highest = prices[prices.length - 1];
+        return {
+            cheapest,
+            highest,
+            median,
+            count: suppliersWithDetail.length,
+        };
+    }, [suppliersWithDetail]);
+
+    const loading = loadingTransactions || loadingSuppliers;
 
     return (
         <AnimatePresence>
@@ -65,9 +143,8 @@ export default function ItemDetailPanel({
                         {/* HEADER */}
                         <div className="flex items-center justify-between border-b px-6 py-4 bg-gradient-to-r from-indigo-500 to-sky-500 text-white">
                             <div>
-                                <h2 className="text-lg font-semibold leading-tight flex items-center gap-2">
-                                    <Package className="h-5 w-5" />
-                                    {item.name}
+                                <h2 className="text-lg font-semibold flex items-center gap-2">
+                                    <Package className="h-5 w-5" /> {item.name}
                                 </h2>
                                 <p className="text-sm text-indigo-100">{item.id}</p>
                             </div>
@@ -102,41 +179,64 @@ export default function ItemDetailPanel({
                                 </div>
                             </section>
 
-                            {/* SUPPLIER SECTION */}
+                            {/* 🔹 SUMMARY */}
+                            {stats && (
+                                <section>
+                                    <h3 className="text-sm font-medium text-slate-600 mb-2">Price Summary</h3>
+                                    <div className="grid grid-cols-2 gap-3 text-sm">
+                                        <Card className="p-3 border border-emerald-200">
+                                            <p className="text-gray-500">Lowest Price</p>
+                                            <p className="text-lg font-semibold text-emerald-600">
+                                                Rp {stats.cheapest.toLocaleString('id-ID')}
+                                            </p>
+                                        </Card>
+                                        <Card className="p-3 border border-rose-200">
+                                            <p className="text-gray-500">Highest Price</p>
+                                            <p className="text-lg font-semibold text-rose-600">
+                                                Rp {stats.highest.toLocaleString('id-ID')}
+                                            </p>
+                                        </Card>
+                                        <Card className="p-3 border border-sky-200">
+                                            <p className="text-gray-500">Median</p>
+                                            <p className="text-lg font-semibold text-sky-600">
+                                                Rp {stats.median.toLocaleString('id-ID')}
+                                            </p>
+                                        </Card>
+                                        <Card className="p-3 border border-gray-200">
+                                            <p className="text-gray-500"># Suppliers</p>
+                                            <p className="text-lg font-semibold">{stats.count}</p>
+                                        </Card>
+                                    </div>
+                                </section>
+                            )}
+
+                            {/* 🔹 SUPPLIER LIST */}
                             <section>
                                 <h3 className="text-sm font-medium text-slate-600 mb-2 flex items-center gap-2">
                                     <Building2 className="h-4 w-4" /> Suppliers Providing This Item
                                 </h3>
 
-                                {isLoading && (
-                                    <p className="text-sm text-slate-500">Loading suppliers...</p>
-                                )}
-                                {error && (
-                                    <p className="text-sm text-red-500">Error loading suppliers</p>
-                                )}
-                                {!isLoading && !error && relatedSuppliers.length === 0 && (
-                                    <p className="text-sm text-slate-500">
-                                        No suppliers found for this item.
-                                    </p>
-                                )}
-
-                                {!isLoading && !error && relatedSuppliers.length > 0 && (
+                                {loading ? (
+                                    <p className="text-sm text-slate-500">Loading data...</p>
+                                ) : suppliersWithDetail.length === 0 ? (
+                                    <p className="text-sm text-slate-500">No suppliers found.</p>
+                                ) : (
                                     <div className="space-y-2 max-h-64 overflow-y-auto">
-                                        {relatedSuppliers.map((s: any, index: number) => (
+                                        {suppliersWithDetail.map((s) => (
                                             <Card
-                                                key={s.id || index}
+                                                key={s.supplier_id}
                                                 className="p-3 border border-slate-200 hover:bg-slate-50 transition-colors"
                                             >
                                                 <div className="flex items-center justify-between">
                                                     <div>
-                                                        <p className="font-medium text-slate-800">{s.nama ?? s.name}</p>
+                                                        <p className="font-medium text-slate-800">{s.supplier_name}</p>
                                                         <p className="text-xs text-slate-500">
-                                                            Code: {s.id || '-'}
+                                                            Last: {new Date(s.last_transaction).toLocaleDateString('id-ID')}
                                                         </p>
                                                         <p className="text-sm text-slate-600 mt-1">
                                                             Price:{' '}
                                                             <span className="font-semibold text-sky-600">
-                                                                Rp {s.price?.toLocaleString('id-ID')}
+                                                                Rp {s.rate_per_unit.toLocaleString('id-ID')}
                                                             </span>
                                                         </p>
                                                     </div>
@@ -144,9 +244,8 @@ export default function ItemDetailPanel({
                                                         variant="secondary"
                                                         className="bg-yellow-50 text-yellow-700 border border-yellow-200"
                                                     >
-                                                        ⭐ {s.rating}
+                                                        <Star className="h-3 w-3 mr-1 fill-amber-400" /> {s.rating}
                                                     </Badge>
-
                                                 </div>
                                             </Card>
                                         ))}
