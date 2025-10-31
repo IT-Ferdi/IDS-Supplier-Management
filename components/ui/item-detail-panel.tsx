@@ -140,14 +140,13 @@ export default function ItemDetailPanel({
                                                             </span>
                                                         </p>
                                                     </div>
-                                                    {s.rating && (
-                                                        <Badge
-                                                            variant="secondary"
-                                                            className="bg-yellow-50 text-yellow-700 border border-yellow-200"
-                                                        >
-                                                            ⭐ {s.rating}
-                                                        </Badge>
-                                                    )}
+                                                    <Badge
+                                                        variant="secondary"
+                                                        className="bg-yellow-50 text-yellow-700 border border-yellow-200"
+                                                    >
+                                                        ⭐ {s.rating}
+                                                    </Badge>
+
                                                 </div>
                                             </Card>
                                         ))}
