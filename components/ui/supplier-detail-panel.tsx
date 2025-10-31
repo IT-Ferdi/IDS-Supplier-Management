@@ -39,7 +39,7 @@ function TransactionTable({ supplierName }: { supplierName: string }) {
                                     <p className="font-medium">{tx.name}</p>
                                     <p className="text-sm text-muted-foreground">{tx.item_name}</p>
                                     <p className="text-xs text-muted-foreground">
-                                        Qty: {tx.qty ?? 0} @ Rp{(tx.rate ?? 0).toLocaleString('id-ID')}
+                                        Qty: {tx.qty ?? 0} @ Rp{((tx.rate ?? 0) / (tx.qty ?? 0)).toLocaleString('id-ID')}
                                     </p>
                                     <p className="text-xs text-muted-foreground">
                                         Date: {tx.transaction_date
@@ -56,10 +56,10 @@ function TransactionTable({ supplierName }: { supplierName: string }) {
                             <Badge
                                 variant="secondary"
                                 className={`${tx.status === 'Completed'
-                                        ? 'bg-green-100 text-green-700 border border-green-200'
-                                        : tx.status === 'Pending'
-                                            ? 'bg-yellow-100 text-yellow-700 border border-yellow-200'
-                                            : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                    ? 'bg-green-100 text-green-700 border border-green-200'
+                                    : tx.status === 'Pending'
+                                        ? 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                                        : 'bg-slate-100 text-slate-700 border border-slate-200'
                                     }`}
                             >
                                 {tx.status}
