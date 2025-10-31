@@ -179,37 +179,6 @@ export default function ItemDetailPanel({
                                 </div>
                             </section>
 
-                            {/* 🔹 SUMMARY */}
-                            {stats && (
-                                <section>
-                                    <h3 className="text-sm font-medium text-slate-600 mb-2">Price Summary</h3>
-                                    <div className="grid grid-cols-2 gap-3 text-sm">
-                                        <Card className="p-3 border border-emerald-200">
-                                            <p className="text-gray-500">Lowest Price</p>
-                                            <p className="text-lg font-semibold text-emerald-600">
-                                                Rp {stats.cheapest.toLocaleString('id-ID')}
-                                            </p>
-                                        </Card>
-                                        <Card className="p-3 border border-rose-200">
-                                            <p className="text-gray-500">Highest Price</p>
-                                            <p className="text-lg font-semibold text-rose-600">
-                                                Rp {stats.highest.toLocaleString('id-ID')}
-                                            </p>
-                                        </Card>
-                                        <Card className="p-3 border border-sky-200">
-                                            <p className="text-gray-500">Median</p>
-                                            <p className="text-lg font-semibold text-sky-600">
-                                                Rp {stats.median.toLocaleString('id-ID')}
-                                            </p>
-                                        </Card>
-                                        <Card className="p-3 border border-gray-200">
-                                            <p className="text-gray-500"># Suppliers</p>
-                                            <p className="text-lg font-semibold">{stats.count}</p>
-                                        </Card>
-                                    </div>
-                                </section>
-                            )}
-
                             {/* 🔹 SUPPLIER LIST */}
                             <section>
                                 <h3 className="text-sm font-medium text-slate-600 mb-2 flex items-center gap-2">
