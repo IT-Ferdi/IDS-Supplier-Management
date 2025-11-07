@@ -9,7 +9,7 @@ function LoginInner() {
     const { user } = useAuth();
     const router = useRouter();
     const params = useSearchParams();
-    const next = params.get('next') ?? '/supplier';
+    const next = params.get('next') ?? '/dashboard';
 
     useEffect(() => {
         if (user) router.replace(next);
