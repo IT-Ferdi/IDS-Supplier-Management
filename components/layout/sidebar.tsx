@@ -11,6 +11,7 @@ import {
   ChevronDown,
   LogOut,
   User,
+  LayoutDashboard,
 } from 'lucide-react';
 import { useAuth } from '@/components/auth/auth-context';
 import { Button } from '@/components/ui/button';
@@ -41,7 +42,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   const [openItem, setOpenItem] = useState(false);
 
   useEffect(() => {
-    setOpenSupplier(pathname === '/' || pathname.startsWith('/supplier'));
+    setOpenSupplier(pathname.startsWith('/supplier'));
     setOpenItem(pathname.startsWith('/item'));
   }, [pathname]);
 
@@ -58,7 +59,6 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
   return (
     <aside
       className={[
-        // sticky + full viewport height makes it stay put (floating)
         'sticky top-0 z-30 h-[100dvh]',
         'flex flex-col border-r border-slate-200 bg-white',
         isCollapsed ? 'w-16' : 'w-64',
@@ -88,8 +88,24 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         </div>
       </div>
 
-      {/* NAV — only this area scrolls if content is long */}
-      <nav className="flex-1 overflow-y-auto p-3">
+      {/* NAV */}
+      <nav className="flex-1 overflow-y-auto p-3 space-y-2">
+        {/* Dashboard (paling atas) */}
+        <Link
+          href="/dashboard"
+          aria-current={pathname === '/dashboard' ? 'page' : undefined}
+          className={[
+            baseItem,
+            'w-full',
+            pathname === '/dashboard' ? activeItem : inactiveItem,
+            isCollapsed ? 'justify-center' : '',
+          ].join(' ')}
+          title={isCollapsed ? 'Dashboard' : undefined}
+        >
+          <LayoutDashboard className="h-4 w-4 shrink-0" />
+          {!isCollapsed && <span>Dashboard</span>}
+        </Link>
+
         {/* Supplier parent */}
         <button
           type="button"
@@ -97,7 +113,7 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
           className={[
             baseItem,
             'w-full justify-between',
-            isActive('/supplier') || pathname === '/' ? activeItem : inactiveItem,
+            isActive('/supplier') ? activeItem : inactiveItem,
             isCollapsed ? 'justify-center' : '',
           ].join(' ')}
           aria-expanded={openSupplier}
@@ -122,8 +138,8 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
           >
             <Link
               href="/supplier"
-              aria-current={pathname === '/supplier' || pathname === '/' ? 'page' : undefined}
-              className={[baseItem, pathname === '/supplier' || pathname === '/' ? activeItem : inactiveItem].join(' ')}
+              aria-current={pathname === '/supplier' ? 'page' : undefined}
+              className={[baseItem, pathname === '/supplier' ? activeItem : inactiveItem].join(' ')}
             >
               List Supplier
             </Link>

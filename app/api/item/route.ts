@@ -31,11 +31,18 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     // Cari item terakhir untuk generate ID baru
-    const lastItem = await itemsCollection.find().sort({ id: -1 }).limit(1).toArray();
-    let newId = 'ITM-00001';
+    const lastItem = await itemsCollection
+      .find({ id: { $regex: /^MID-/ } })
+      .sort({ id: -1 })
+      .limit(1)
+      .toArray();
+
+    // Generate MID baru
+    let newId = 'MID-0001';
     if (lastItem.length > 0) {
-      const lastNum = parseInt(lastItem[0].id.replace('ITM-', ''), 10);
-      newId = `ITM-${String(lastNum + 1).padStart(5, '0')}`;
+      const lastNum = parseInt(lastItem[0].id.replace('MID-', ''), 10);
+      const nextNum = lastNum + 1;
+      newId = `MID-${String(nextNum).padStart(4, '0')}`;
     }
 
     const newItem: ItemRow = {

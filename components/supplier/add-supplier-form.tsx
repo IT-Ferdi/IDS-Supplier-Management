@@ -332,7 +332,7 @@ export default function AddSupplierForm() {
     return (
         <main className="space-y-4 p-4">
             <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold">Tambah Supplier</h1>
+                <h1 className="text-3xl font-bold tracking-tight">Tambah Supplier</h1>
                 <TemplateToggle mode={mode} onModeChange={setMode} />
             </div>
 

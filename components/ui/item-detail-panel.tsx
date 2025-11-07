@@ -71,12 +71,12 @@ export default function ItemDetailPanel({
                     new Date(a.transaction_date).getTime()
             );
             const latestTx = sorted[0];
-            const ratePerUnit = latestTx.qty > 0 ? latestTx.rate / latestTx.qty : 0;
+            const ratePerUnit = latestTx.qty ? (latestTx.qty > 0 ? latestTx.qty : 0) : 0;
             latest.push({
                 supplier_id,
-                supplier_name: latestTx.supplier_name,
+                supplier_name: latestTx.supplier_name ?? "Unknown",
                 last_transaction: latestTx.transaction_date,
-                rate_per_unit: ratePerUnit,
+                rate_per_unit: ratePerUnit ?? 0,
             });
         });
 
