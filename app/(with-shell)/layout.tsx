@@ -9,45 +9,76 @@ export default function WithShellLayout({ children }: { children: React.ReactNod
     const { user, isLoading } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
-    const [collapsed, setCollapsed] = useState(false);
+
+    // gunakan constant supaya mudah disesuaikan
+    const SIDEBAR_W = 256; // px when expanded (same as w-64)
+    const SIDEBAR_COLLAPSED_W = 64; // px when collapsed (same as w-16)
+
+    // baca preferensi collapse dari localStorage (fallback false)
+    const [collapsed, setCollapsed] = useState<boolean>(() => {
+        try {
+            const v = typeof window !== 'undefined' ? localStorage.getItem('layout.collapsed') : null;
+            return v === '1';
+        } catch {
+            return false;
+        }
+    });
 
     // Redirect to /login if not authenticated
     useEffect(() => {
         if (!isLoading && !user) {
-            // preserve where the user wanted to go
             const next = encodeURIComponent(pathname || '/supplier');
             router.replace(`/login?next=${next}`);
         }
     }, [isLoading, user, pathname, router]);
 
+    // persist collapse state
+    useEffect(() => {
+        try {
+            localStorage.setItem('layout.collapsed', collapsed ? '1' : '0');
+        } catch { }
+    }, [collapsed]);
+
     if (isLoading) {
         return (
-            <div className="min-h-dvh grid place-items-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+            <div className="min-h-[100dvh] grid place-items-center">
+                <div
+                    className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-transparent"
+                    role="status"
+                    aria-label="Loading"
+                />
             </div>
         );
     }
 
-    if (!user) return null; // waiting for redirect
+    if (!user) return null; // sedang redirect
 
-    // Fixed sidebar + content that scrolls
     return (
-        <div className="min-h-dvh bg-slate-50">
-            {/* fixed sidebar */}
+        <div className="min-h-[100dvh] bg-slate-50" style={{ paddingLeft: 0 }}>
+            {/* fixed sidebar container: kita tetap render Sidebar di dalam aside
+          gunakan inline style width supaya main margin selalu sinkron */}
             <aside
-                className={`fixed inset-y-0 left-0 z-40 border-r border-slate-200 bg-white transition-[width] ${collapsed ? 'w-16' : 'w-64'
-                    }`}
+                aria-label="Primary sidebar"
+                className="fixed inset-y-0 left-0 z-40 border-r border-slate-200 bg-white transition-[width] ease-out"
+                style={{ width: collapsed ? SIDEBAR_COLLAPSED_W : SIDEBAR_W }}
             >
                 <Sidebar isCollapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
             </aside>
 
-            {/* content */}
+            {/* main content */}
             <main
-                className={`min-h-dvh transition-[margin-left] ${collapsed ? 'ml-16' : 'ml-64'
-                    } p-4`}
+                className="min-h-[100dvh] transition-[margin-left] ease-out"
+                style={{
+                    marginLeft: collapsed ? SIDEBAR_COLLAPSED_W : SIDEBAR_W,
+                    // padding lebih compact: horizontal kecil, vertical kecil
+                }}
             >
-                {/* page content scrolls, sidebar does not */}
-                <div className="mx-auto max-w-[1600px]">{children}</div>
+                {/* container supaya konten tidak melebar gila; gunakan safe-area inset */}
+                <div
+                    className="mx-auto w-full"
+                >
+                    {children}
+                </div>
             </main>
         </div>
     );

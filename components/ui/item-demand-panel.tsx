@@ -45,7 +45,7 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
 
                 rows.push({
                     mrId: mr.name ?? '',
-                    mrDate: mr.transaction_date,
+                    mrDate: mr.required_by,
                     mrStatus: mr.status ?? '-',
                     project: it.project ?? '',
                     cost_center: it.cost_center ?? '',
@@ -177,27 +177,56 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                                         <div className="space-y-2 max-h-52 overflow-y-auto">
                                             {mrIds.map((m) => (
                                                 <div key={m.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-white">
-                                                    <div className="min-w-0">
-                                                        <p className="font-medium text-slate-800 truncate">{m.id}</p>
-                                                        <p className="text-xs text-slate-500">
-                                                            {m.date ? new Date(m.date).toLocaleDateString('id-ID') : '-'}
-                                                        </p>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <Badge
-                                                            variant="secondary"
-                                                            className={
-                                                                (m.status || '').toLowerCase() === 'draft'
-                                                                    ? 'bg-slate-100 text-slate-700 border border-slate-200'
-                                                                    : 'bg-yellow-100 text-yellow-700 border border-yellow-200'
-                                                            }
-                                                        >
-                                                            {m.status}
-                                                        </Badge>
-                                                        <div className="mt-1 text-[11px] text-slate-600">
-                                                            Asked {m.asked.toLocaleString('id-ID')} • Ordered {m.ordered.toLocaleString('id-ID')} • Recv {m.received.toLocaleString('id-ID')}
+                                                    <div className="flex items-start justify-between w-full">
+                                                        {/* Kiri: ID, tanggal + status */}
+                                                        <div className="min-w-0">
+                                                            {/* ID */}
+                                                            <p className="font-medium text-slate-800 truncate">{m.id}</p>
+
+                                                            {/* Tanggal & Status */}
+                                                            <div className="flex items-center gap-2 text-xs mt-1">
+                                                                <div className="flex items-center gap-1 bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full ring-1 ring-sky-100">
+                                                                    <svg
+                                                                        xmlns="http://www.w3.org/2000/svg"
+                                                                        className="h-3.5 w-3.5 text-sky-600"
+                                                                        fill="none"
+                                                                        viewBox="0 0 24 24"
+                                                                        stroke="currentColor"
+                                                                        strokeWidth={2}
+                                                                    >
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10m-12 8h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                                                    </svg>
+                                                                    <span className="font-medium">
+                                                                        {m.date ? new Date(m.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                                                                    </span>
+                                                                </div>
+
+                                                                <Badge
+                                                                    variant="secondary"
+                                                                    className={(m.status || '').toLowerCase() === 'draft'
+                                                                        ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                                                                        : 'bg-yellow-100 text-yellow-700 border border-yellow-200'}
+                                                                >
+                                                                    {m.status}
+                                                                </Badge>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Kanan: angka Asked, Ordered, Recv */}
+                                                        <div className="flex flex-col items-end gap-1 text-xs text-slate-700">
+                                                            <Badge className="bg-sky-50 text-sky-700 ring-sky-200 text-[11px] px-2 py-0.5">
+                                                                Asked {m.asked.toLocaleString('id-ID')}
+                                                            </Badge>
+                                                            <Badge className="bg-amber-50 text-amber-700 ring-amber-200 text-[11px] px-2 py-0.5">
+                                                                Ordered {m.ordered.toLocaleString('id-ID')}
+                                                            </Badge>
+                                                            <Badge className="bg-emerald-50 text-emerald-700 ring-emerald-200 text-[11px] px-2 py-0.5">
+                                                                Recv {m.received.toLocaleString('id-ID')}
+                                                            </Badge>
                                                         </div>
                                                     </div>
+
+
                                                 </div>
                                             ))}
                                         </div>
@@ -223,11 +252,18 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                                                         <p className="font-medium text-slate-800 truncate">{p.name}</p>
                                                         <p className="text-xs text-slate-500">{p.count} baris</p>
                                                     </div>
-                                                    <div className="text-right text-xs text-slate-700">
-                                                        <div>Asked {p.asked.toLocaleString('id-ID')}</div>
-                                                        <div>Ordered {p.ordered.toLocaleString('id-ID')}</div>
-                                                        <div>Recv {p.received.toLocaleString('id-ID')}</div>
+                                                    <div className="flex flex-col items-end gap-1 text-xs text-slate-700">
+                                                        <span className="inline-flex items-center rounded-full bg-sky-50 text-sky-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-sky-200">
+                                                            Asked {p.asked.toLocaleString('id-ID')}
+                                                        </span>
+                                                        <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-amber-200">
+                                                            Ordered {p.ordered.toLocaleString('id-ID')}
+                                                        </span>
+                                                        <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-emerald-200">
+                                                            Recv {p.received.toLocaleString('id-ID')}
+                                                        </span>
                                                     </div>
+
                                                 </div>
                                             ))}
                                         </div>
@@ -248,20 +284,33 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                                     <Card className="p-3">
                                         <div className="space-y-2 max-h-40 overflow-y-auto">
                                             {costCenters.map((c) => (
-                                                <div key={c.name} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-white">
+                                                <div
+                                                    key={c.name}
+                                                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-white"
+                                                >
+                                                    {/* Kiri: nama + jumlah baris */}
                                                     <div className="min-w-0">
                                                         <p className="font-medium text-slate-800 truncate">{c.name}</p>
                                                         <p className="text-xs text-slate-500">{c.count} baris</p>
                                                     </div>
-                                                    <div className="text-right text-xs text-slate-700">
-                                                        <div>Asked {c.asked.toLocaleString('id-ID')}</div>
-                                                        <div>Ordered {c.ordered.toLocaleString('id-ID')}</div>
-                                                        <div>Recv {c.received.toLocaleString('id-ID')}</div>
+
+                                                    {/* Kanan: badge angka */}
+                                                    <div className="flex flex-col items-end gap-1 text-xs text-slate-700">
+                                                        <span className="inline-flex items-center rounded-full bg-sky-50 text-sky-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-sky-200">
+                                                            Asked {c.asked.toLocaleString('id-ID')}
+                                                        </span>
+                                                        <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-amber-200">
+                                                            Ordered {c.ordered.toLocaleString('id-ID')}
+                                                        </span>
+                                                        <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-emerald-200">
+                                                            Recv {c.received.toLocaleString('id-ID')}
+                                                        </span>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
                                     </Card>
+
                                 )}
                             </section>
 
@@ -278,20 +327,33 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                                     <Card className="p-3">
                                         <div className="space-y-2 max-h-40 overflow-y-auto">
                                             {departments.map((d) => (
-                                                <div key={d.name} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-white">
+                                                <div
+                                                    key={d.name}
+                                                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-white"
+                                                >
+                                                    {/* Kiri: nama + jumlah baris */}
                                                     <div className="min-w-0">
                                                         <p className="font-medium text-slate-800 truncate">{d.name}</p>
                                                         <p className="text-xs text-slate-500">{d.count} baris</p>
                                                     </div>
-                                                    <div className="text-right text-xs text-slate-700">
-                                                        <div>Asked {d.asked.toLocaleString('id-ID')}</div>
-                                                        <div>Ordered {d.ordered.toLocaleString('id-ID')}</div>
-                                                        <div>Recv {d.received.toLocaleString('id-ID')}</div>
+
+                                                    {/* Kanan: badge angka */}
+                                                    <div className="flex flex-col items-end gap-1 text-xs text-slate-700">
+                                                        <span className="inline-flex items-center rounded-full bg-sky-50 text-sky-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-sky-200">
+                                                            Asked {d.asked.toLocaleString('id-ID')}
+                                                        </span>
+                                                        <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-amber-200">
+                                                            Ordered {d.ordered.toLocaleString('id-ID')}
+                                                        </span>
+                                                        <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-emerald-200">
+                                                            Recv {d.received.toLocaleString('id-ID')}
+                                                        </span>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
                                     </Card>
+
                                 )}
                             </section>
                         </div>
