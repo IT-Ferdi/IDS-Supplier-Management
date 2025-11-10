@@ -38,6 +38,9 @@ type Props<T> = {
 
   // OPTIONAL right-slot for extra actions (export, etc)
   rightActions?: React.ReactNode;
+
+  // klik baris
+  onRowClick?: (row: T) => void;
 };
 
 export default function DashboardTable<T>({
@@ -57,6 +60,7 @@ export default function DashboardTable<T>({
   searchIdPlaceholder = 'Cari Item ID…',
   searchNamePlaceholder = 'Cari Item Name…',
   rightActions,
+  onRowClick,
 }: Props<T>) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -95,7 +99,9 @@ export default function DashboardTable<T>({
                 />
               </label>
             </div>
-          ) : <div />}
+          ) : (
+            <div />
+          )}
 
           {/* Right: actions */}
           {rightActions ? <div className="ml-auto">{rightActions}</div> : null}
@@ -118,22 +124,49 @@ export default function DashboardTable<T>({
           <tbody>
             {loading ? (
               <tr>
-                <td className="px-4 py-12 text-center text-slate-400" colSpan={columns.length}>Loading…</td>
+                <td className="px-4 py-12 text-center text-slate-400" colSpan={columns.length}>
+                  Loading…
+                </td>
               </tr>
             ) : data.length === 0 ? (
               <tr>
-                <td className="px-4 py-12 text-center text-slate-500" colSpan={columns.length}>{emptyText}</td>
+                <td className="px-4 py-12 text-center text-slate-500" colSpan={columns.length}>
+                  {emptyText}
+                </td>
               </tr>
             ) : (
-              data.map((row, i) => (
-                <tr key={i} className={`border-t border-slate-100 ${i % 2 ? 'bg-slate-50/40' : 'bg-white'}`}>
-                  {columns.map((col) => (
-                    <td key={col.key} className={['px-4 py-3', col.className].filter(Boolean).join(' ')}>
-                      {col.render ? col.render(row) : (row as any)[col.key]}
-                    </td>
-                  ))}
-                </tr>
-              ))
+              data.map((row, i) => {
+                const clickable = typeof onRowClick === 'function';
+                return (
+                  <tr
+                    key={i}
+                    onClick={clickable ? () => onRowClick?.(row) : undefined}
+                    onKeyDown={
+                      clickable
+                        ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onRowClick?.(row);
+                          }
+                        }
+                        : undefined
+                    }
+                    role={clickable ? 'button' as any : undefined}
+                    tabIndex={clickable ? 0 : -1}
+                    className={[
+                      'border-t border-slate-100',
+                      i % 2 ? 'bg-slate-50/40' : 'bg-white',
+                      clickable ? 'cursor-pointer hover:bg-sky-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300' : '',
+                    ].join(' ')}
+                  >
+                    {columns.map((col) => (
+                      <td key={col.key} className={['px-4 py-3', col.className].filter(Boolean).join(' ')}>
+                        {col.render ? col.render(row) : (row as any)[col.key]}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

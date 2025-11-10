@@ -1,13 +1,13 @@
 // components/dashboard/dashboard.tsx
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
 import DashboardTable from '@/components/dashboard/dashboard-table';
 import { useItems } from '@/hooks/useItemData';
 import { useMaterialRequestData } from '@/hooks/useMaterialRequestData';
 import type { ItemRow } from '@/types/item';
 import type { MaterialRequest, MaterialRequestItem } from '@/types/material-request';
+import ItemNeedPanel from '@/components/ui/item-demand-panel';
 
 type Row = {
     id: string;
@@ -21,13 +21,26 @@ type Row = {
 
 export default function Dashboard() {
     const { data: items = [], isLoading: loadingItems } = useItems();
-    const [onlyNeeded, setOnlyNeeded] = useState(true);
     const { data: mrs = [], isLoading: loadingMr } = useMaterialRequestData();
 
-    const [query, setQuery] = useState('');
     const [page, setPage] = useState(1);
-    const pageSize = 4;
+    const pageSize = 10;
 
+    // filter
+    const [searchId, setSearchId] = useState('');
+    const [searchName, setSearchName] = useState('');
+    const [onlyNeeded, setOnlyNeeded] = useState(true);
+
+    // panel
+    const [openItemId, setOpenItemId] = useState<string | null>(null);
+    const selectedItem = openItemId ? (items as ItemRow[]).find((it) => it.id === openItemId) ?? null : null;
+
+    // reset page jika filter berubah
+    useEffect(() => {
+        setPage(1);
+    }, [searchId, searchName, onlyNeeded]);
+
+    // agregasi MR (Draft + Partially Ordered)
     const aggByItem = useMemo(() => {
         const ALLOWED = new Set(['draft', 'partially ordered']);
         const map = new Map<string, { asked: number; ordered: number; received: number }>();
@@ -60,6 +73,7 @@ export default function Dashboard() {
         return map;
     }, [mrs]);
 
+    // bentuk baris
     const rows: Row[] = useMemo(() => {
         return (items as ItemRow[]).map((it) => {
             const agg = aggByItem.get(it.id) ?? { asked: 0, ordered: 0, received: 0 };
@@ -80,16 +94,21 @@ export default function Dashboard() {
         });
     }, [items, aggByItem]);
 
+    // filter + onlyNeeded
     const filtered = useMemo(() => {
-        const q = query.trim().toLowerCase();
-        let base = rows;
-        if (q) {
-            base = base.filter(r => r.id.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
-        }
-        // tampilkan hanya yang shortage > 0 bila onlyNeeded true
-        return onlyNeeded ? base.filter(r => r.shortage > 0) : base;
-    }, [rows, query, onlyNeeded]);
+        const idQ = searchId.trim().toLowerCase();
+        const nameQ = searchName.trim().toLowerCase();
 
+        let base = rows;
+
+        if (idQ) base = base.filter((r) => r.id.toLowerCase().includes(idQ));
+        if (nameQ) base = base.filter((r) => r.name.toLowerCase().includes(nameQ));
+        if (onlyNeeded) base = base.filter((r) => r.shortage > 0);
+
+        return base;
+    }, [rows, searchId, searchName, onlyNeeded]);
+
+    // paging
     const total = filtered.length;
     const paged = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
 
@@ -106,21 +125,14 @@ export default function Dashboard() {
             <div className="flex items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-                    <p className="mt-1 text-sm text-slate-500">Kebutuhan item dari Material Request (Draft dan Partially Ordered).</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                        Kebutuhan item dari Material Request (Draft dan Partially Ordered).
+                    </p>
                 </div>
-
-                <label className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                        value={query}
-                        onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-                        placeholder="Cari ID atau Nama Item…"
-                        className="w-[22rem] max-w-[92vw] rounded-2xl border border-slate-300 bg-white px-10 py-2 text-sm shadow-sm outline-none transition focus:ring-2 focus:ring-sky-300"
-                    />
-                </label>
             </div>
 
             <DashboardTable<Row>
+                // kolom
                 columns={[
                     { key: 'id', header: 'Code', className: 'font-mono' },
                     { key: 'name', header: 'Name' },
@@ -160,7 +172,13 @@ export default function Dashboard() {
                         header: 'Needed',
                         className: 'text-right',
                         render: (r) => (
-                            <Badge cls={r.shortage > 0 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-600 ring-slate-200'}>
+                            <Badge
+                                cls={
+                                    r.shortage > 0
+                                        ? 'bg-rose-50 text-rose-700 ring-rose-200'
+                                        : 'bg-slate-50 text-slate-600 ring-slate-200'
+                                }
+                            >
                                 {r.shortage.toLocaleString('id-ID')}
                             </Badge>
                         ),
@@ -172,7 +190,36 @@ export default function Dashboard() {
                 pageSize={pageSize}
                 total={total}
                 onPageChange={setPage}
+                // built-in dual search di toolbar table
+                searchId={searchId}
+                searchName={searchName}
+                onSearchIdChange={setSearchId}
+                onSearchNameChange={setSearchName}
+                searchIdPlaceholder="Cari Item ID…"
+                searchNamePlaceholder="Cari Item Name…"
+                // toggle onlyNeeded di sisi kanan toolbar
+                rightActions={
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-2 focus:ring-sky-300"
+                            checked={onlyNeeded}
+                            onChange={(e) => setOnlyNeeded(e.target.checked)}
+                        />
+                        Only Needed
+                    </label>
+                }
+                // klik baris -> buka panel
+                onRowClick={(row) => setOpenItemId((row as Row).id)}
             />
+
+            {/* Panel detail kebutuhan item per-MR */}
+            {openItemId ? (
+                <ItemNeedPanel
+                    item={selectedItem}
+                    onClose={() => setOpenItemId(null)}
+                />
+            ) : null}
         </div>
     );
 }
