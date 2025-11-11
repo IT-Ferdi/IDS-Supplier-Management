@@ -4,15 +4,21 @@
 import { useMemo, useState, useEffect } from 'react';
 import DashboardTable from '@/components/dashboard/dashboard-table';
 import { useItems } from '@/hooks/useItemData';
-import { useMaterialRequestData } from '@/hooks/useMaterialRequestData';
+import {
+    useMaterialRequestData,
+    useMaterialRequestSummary,
+    useMaterialRequestDepartmentSummary,
+    useFilteredMaterialRequests,
+    useMaterialRequestBranchSummary,
+    useMaterialRequestProjectList
+} from '@/hooks/useMaterialRequestData';
 import { useTransactionData } from '@/hooks/useTransactionData';
 import type { ItemRow } from '@/types/item';
 import type { MaterialRequest, MaterialRequestItem } from '@/types/material-request';
 import DashboardSummary from '@/components/dashboard/dashboard-summary';
 import ItemNeedPanel from '@/components/ui/item-demand-panel';
-import ProjectPie from '@/components/dashboard/project-chart';
 import DepartmentChart from '@/components/dashboard/department-chart';
-import { useMaterialRequestDepartmentSummary } from '@/hooks/useMaterialRequestData';
+import BranchList from '@/components/dashboard/branch-list';
 
 type Row = {
     id: string;
@@ -27,29 +33,55 @@ type Row = {
 };
 
 export default function Dashboard() {
+    // interactive filters (single selection)
+    const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+    const [selectedDept, setSelectedDept] = useState<string | null>(null);
+    const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+    const [selectedProject, setSelectedProject] = useState<string | null>(null);
+
     const { data: items = [], isLoading: loadingItems } = useItems();
     const { data: mrs = [], isLoading: loadingMr } = useMaterialRequestData();
-    const { data: deptData, total, isLoading } = useMaterialRequestDepartmentSummary();
     const { data: transactions = [] } = useTransactionData();
+
+    // project list hook
+    const { projects: projectList = [] } = useMaterialRequestProjectList({
+        selectedStatus,
+        selectedBranch,
+        start_date: null,
+        end_date: null,
+    });
+
+    const { data: branchData = [], total: branchTotal = 0, isLoading: branchLoading } =
+        useMaterialRequestBranchSummary({ selectedStatus, selectedProject, start_date: null, end_date: null });
 
     const [page, setPage] = useState(1);
     const pageSize = 4;
 
-    // filter
+    // table filters
     const [searchId, setSearchId] = useState('');
     const [searchName, setSearchName] = useState('');
     const [onlyNeeded, setOnlyNeeded] = useState(true);
 
-    // panel
+    // panel state
     const [openItemId, setOpenItemId] = useState<string | null>(null);
     const selectedItem = openItemId ? (items as ItemRow[]).find((it) => it.id === openItemId) ?? null : null;
 
-    // reset page jika filter berubah
+    // department summary for chart (reactive to selectedStatus + selectedBranch + selectedProject)
+    const {
+        data: deptData = [],
+        total: deptTotal = 0,
+        isLoading: deptLoading,
+    } = useMaterialRequestDepartmentSummary({ selectedStatus, selectedBranch, selectedProject, start_date: null, end_date: null });
+
+    // map to chart input: {name, value}
+    const chartInput = (deptData || []).map((d) => ({ name: d.name, value: d.count }));
+
+    // reset page when filters change
     useEffect(() => {
         setPage(1);
-    }, [searchId, searchName, onlyNeeded]);
+    }, [searchId, searchName, onlyNeeded, selectedStatus, selectedDept, selectedBranch, selectedProject]);
 
-    // last purchase per item (dari transaksi)
+    // last purchase per item (from transactions)
     const lastPurchaseByItem = useMemo(() => {
         const map = new Map<string, { supplier_id?: string; supplier_name?: string; date?: string }>();
         (transactions || []).forEach((tx) => {
@@ -73,7 +105,23 @@ export default function Dashboard() {
         return map;
     }, [transactions]);
 
-    // agregasi MR (Draft + Partially Ordered)
+    // ----------------------------
+    // Use filtered MRs for table aggregation and other derived data.
+    // Logic:
+    // - If user selected a status, pass that status (string).
+    // - If no status selected, default to ['draft','partially ordered'] to keep original behavior.
+    // - Pass selectedDept, selectedBranch, selectedProject so filteredMRs respects all filters.
+    const statusesForAgg = selectedStatus ? selectedStatus : ['draft', 'partially ordered'];
+
+    const { filtered: filteredMRs = [] } = useFilteredMaterialRequests({
+        selectedStatus: statusesForAgg,
+        selectedDepartment: selectedDept,
+        selectedBranch,
+        selectedProject,
+    });
+    // ----------------------------
+
+    // aggregate MR per item using filteredMRs
     const aggByItem = useMemo(() => {
         const ALLOWED = new Set(['draft', 'partially ordered']);
         const map = new Map<string, { asked: number; ordered: number; received: number }>();
@@ -88,7 +136,7 @@ export default function Dashboard() {
             });
         };
 
-        (mrs as MaterialRequest[]).forEach((mr) => {
+        (filteredMRs as MaterialRequest[]).forEach((mr) => {
             const st = (mr.status ?? '').toLowerCase();
             if (!ALLOWED.has(st)) return;
             (mr.items ?? []).forEach((it: MaterialRequestItem) => {
@@ -102,9 +150,9 @@ export default function Dashboard() {
         });
 
         return map;
-    }, [mrs]);
+    }, [filteredMRs]);
 
-    // bentuk baris tabel
+    // build table rows
     const rows: Row[] = useMemo(() => {
         return (items as ItemRow[]).map((it) => {
             const agg = aggByItem.get(it.id) ?? { asked: 0, ordered: 0, received: 0 };
@@ -124,7 +172,7 @@ export default function Dashboard() {
         });
     }, [items, aggByItem, lastPurchaseByItem]);
 
-    // filter + onlyNeeded
+    // client-side table filters
     const filtered = useMemo(() => {
         const idQ = searchId.trim().toLowerCase();
         const nameQ = searchName.trim().toLowerCase();
@@ -135,7 +183,7 @@ export default function Dashboard() {
         return base;
     }, [rows, searchId, searchName, onlyNeeded]);
 
-    // paging — gunakan nama berbeda supaya tidak bentrok
+    // paging
     const totalRows = filtered.length;
     const paged = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
     const loading = loadingItems || loadingMr;
@@ -144,51 +192,25 @@ export default function Dashboard() {
         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${cls}`}>{children}</span>
     );
 
-    // Summary values: latest MR date, nearest required_by, counts
-    const { latestDate, nearestRequiredBy, totalMR, draftCount, partiallyOrderedCount } = useMemo(() => {
-        let latest: string | null = null;
-        const requiredDates: string[] = [];
-        let total = 0;
-        let draft = 0;
-        let partial = 0;
-
-        (mrs as MaterialRequest[]).forEach((mr) => {
-            const txDate = mr.transaction_date;
-            if (txDate) {
-                if (!latest || new Date(txDate) > new Date(latest)) latest = txDate;
-            }
-            const req = mr.required_by;
-            if (req) requiredDates.push(req);
-            const st = (mr.status ?? '').toLowerCase();
-            total++;
-            if (st === 'draft') draft++;
-            if (st === 'partially ordered') partial++;
-        });
-
-        // nearest required by: pilih tanggal yang >= hari ini terkecil. kalau tidak ada, ambil earliest.
-        const today = new Date();
-        const sortedReq = requiredDates
-            .map((d) => ({ raw: d, time: new Date(d).getTime() }))
-            .sort((a, b) => a.time - b.time);
-        const future = sortedReq.find((s) => s.time >= new Date(today.toDateString()).getTime());
-        const nearest = future ? future.raw : (sortedReq[0]?.raw ?? null);
-
-        return {
-            latestDate: latest,
-            nearestRequiredBy: nearest,
-            totalMR: total,
-            draftCount: draft,
-            partiallyOrderedCount: partial,
-        };
-    }, [mrs]);
+    // summary from hook (reactive to selectedStatus + selectedDept + selectedBranch + selectedProject)
+    const {
+        latestDate,
+        nearestRequiredBy,
+        totalMR,
+        draftCount,
+        partiallyOrderedCount,
+        isLoading: summaryLoading,
+    } = useMaterialRequestSummary({
+        selectedStatus,
+        selectedDepartment: selectedDept,
+        selectedBranch,
+        selectedProject,
+        start_date: null,
+        end_date: null,
+    });
 
     return (
         <div className="p-2 space-y-4">
-            <div className="flex items-center justify-between gap-3">
-                <div>
-                    <h1 className="text-3xl font-semibold">Dashboard</h1>
-                </div>
-            </div>
 
             <DashboardSummary
                 latestDate={latestDate ?? undefined}
@@ -196,16 +218,58 @@ export default function Dashboard() {
                 totalMR={totalMR}
                 draftCount={draftCount}
                 partiallyOrderedCount={partiallyOrderedCount}
+                // interactivity props
+                selectedStatus={selectedStatus}
+                onSelectStatus={(st) => {
+                    setSelectedStatus((prev) => (prev === st ? null : st));
+                    // optional: clear department or project when status changes:
+                    // setSelectedDept(null); setSelectedProject(null);
+                }}
+                selectedDepartment={selectedDept}
+                onSelectDepartment={(d) => {
+                    setSelectedDept((prev) => (prev === d ? null : d));
+                }}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                {!isLoading && deptData && deptData.length > 0 ? (
-                    <DepartmentChart
-                        chartData={deptData}
-                        height={300}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                <div className="md:col-span-1 space-y-3">
+                    {/* Project select (simple) */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-3">
+                        <label className="text-sm text-slate-600 mb-2 block">Project</label>
+                        <select
+                            value={selectedProject ?? ''}
+                            onChange={(e) => setSelectedProject(e.target.value || null)}
+                            className="w-full rounded-md border px-2 py-1 text-sm"
+                        >
+                            <option value="">All projects</option>
+                            {projectList.map((p) => (
+                                <option key={p.name} value={p.name}>{p.name} ({p.count})</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <BranchList
+                        data={branchData}
+                        total={branchTotal}
+                        selectedBranch={selectedBranch}
+                        onBranchClick={(b) => setSelectedBranch((prev) => (prev === b ? null : b))}
+                        title="Cabang / Kota"
                     />
+                </div>
+
+                {!loading && !deptLoading && chartInput && chartInput.length > 0 ? (
+                    <div className="md:col-span-2 row-span-1">
+                        <DepartmentChart
+                            data={chartInput}
+                            selectedStatus={selectedStatus}
+                            selectedDept={selectedDept}
+                            onDeptClick={(name) => setSelectedDept((s) => (s === name ? null : name))}
+                            title="Department"
+                            height={387}
+                        />
+                    </div>
                 ) : (
-                    <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 flex items-center justify-center">
+                    <div className="md:col-span-2 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 flex items-center justify-center">
                         Loading department data...
                     </div>
                 )}
@@ -218,22 +282,55 @@ export default function Dashboard() {
                         { key: 'name', header: 'Name', width: '260px' },
                         { key: 'category', header: 'Category', width: '160px' },
                         { key: 'uom', header: 'UOM', width: '80px', className: 'text-center' },
-                        { key: 'asked', header: 'Qty Asked', width: '100px', className: 'text-right', render: (r) => <Badge cls="bg-sky-50 text-sky-700 ring-sky-200">{r.asked.toLocaleString('id-ID')}</Badge> },
-                        { key: 'ordered', header: 'Qty Ordered', width: '100px', className: 'text-right', render: (r) => <Badge cls="bg-amber-50 text-amber-700 ring-amber-200">{r.ordered.toLocaleString('id-ID')}</Badge> },
-                        { key: 'received', header: 'Qty Received', width: '100px', className: 'text-right', render: (r) => <Badge cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{r.received.toLocaleString('id-ID')}</Badge> },
-                        { key: 'shortage', header: 'Needed', width: '100px', className: 'text-right', render: (r) => <Badge cls={r.shortage > 0 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-600 ring-slate-200'}>{r.shortage.toLocaleString('id-ID')}</Badge> },
                         {
-                            key: 'lastSupplier', header: 'Last Purchased From', width: '220px', render: (r) => {
+                            key: 'asked',
+                            header: 'Qty Asked',
+                            width: '100px',
+                            className: 'text-right',
+                            render: (r) => <Badge cls="bg-sky-50 text-sky-700 ring-sky-200">{r.asked.toLocaleString('id-ID')}</Badge>,
+                        },
+                        {
+                            key: 'ordered',
+                            header: 'Qty Ordered',
+                            width: '100px',
+                            className: 'text-right',
+                            render: (r) => <Badge cls="bg-amber-50 text-amber-700 ring-amber-200">{r.ordered.toLocaleString('id-ID')}</Badge>,
+                        },
+                        {
+                            key: 'received',
+                            header: 'Qty Received',
+                            width: '100px',
+                            className: 'text-right',
+                            render: (r) => <Badge cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{r.received.toLocaleString('id-ID')}</Badge>,
+                        },
+                        {
+                            key: 'shortage',
+                            header: 'Needed',
+                            width: '100px',
+                            className: 'text-right',
+                            render: (r) => (
+                                <Badge cls={r.shortage > 0 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-600 ring-slate-200'}>
+                                    {r.shortage.toLocaleString('id-ID')}
+                                </Badge>
+                            ),
+                        },
+                        {
+                            key: 'lastSupplier',
+                            header: 'Last Purchased From',
+                            width: '220px',
+                            render: (r) => {
                                 const s = r.lastSupplier;
                                 if (!s) return <span className="text-slate-500">-</span>;
                                 return (
                                     <div className="text-right">
-                                        <div className="truncate" title={s.name || ''}>{s.name || s.id}</div>
+                                        <div className="truncate" title={s.name || ''}>
+                                            {s.name || s.id}
+                                        </div>
                                         <div className="text-xs text-slate-400 mt-0.5">{s.date ? new Date(s.date).toLocaleDateString('id-ID') : ''}</div>
                                     </div>
                                 );
-                            }
-                        }
+                            },
+                        },
                     ]}
                     data={paged}
                     loading={loading}
@@ -247,7 +344,12 @@ export default function Dashboard() {
                     onSearchNameChange={setSearchName}
                     rightActions={
                         <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                            <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-2 focus:ring-sky-300" checked={onlyNeeded} onChange={(e) => setOnlyNeeded(e.target.checked)} />
+                            <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-2 focus:ring-sky-300"
+                                checked={onlyNeeded}
+                                onChange={(e) => setOnlyNeeded(e.target.checked)}
+                            />
                             Only Needed
                         </label>
                     }
@@ -255,13 +357,7 @@ export default function Dashboard() {
                 />
             </div>
 
-            {/* Panel detail kebutuhan item per-MR */}
-            {openItemId ? (
-                <ItemNeedPanel
-                    item={selectedItem}
-                    onClose={() => setOpenItemId(null)}
-                />
-            ) : null}
+            {openItemId ? <ItemNeedPanel item={selectedItem} onClose={() => setOpenItemId(null)} /> : null}
         </div>
     );
 }
