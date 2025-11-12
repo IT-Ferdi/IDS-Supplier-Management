@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Package, CalendarDays, Clock, X } from 'lucide-react';
+import { Package, CalendarDays, Clock, X, RefreshCw } from 'lucide-react';
 
 type Props = {
     latestDate?: string;
@@ -16,6 +16,9 @@ type Props = {
 
     selectedDepartment?: string | null;
     onSelectDepartment?: (dept: string | null) => void;
+
+    // refresh handler
+    onRefresh?: () => void;
 };
 
 export default function DashboardSummary({
@@ -28,6 +31,7 @@ export default function DashboardSummary({
     onSelectStatus,
     selectedDepartment = null,
     onSelectDepartment,
+    onRefresh,
 }: Props) {
     const formatDate = (d?: string) =>
         d
@@ -45,14 +49,12 @@ export default function DashboardSummary({
                 type="button"
                 onClick={() => onSelectStatus?.(isSelected ? null : value)}
                 className={[
-                    'inline-flex flex-col items-center justify-center rounded-full px-5 py-2 text-sm font-semibold shadow transition',
-                    isSelected
-                        ? `${bg} ${fg} ring-2 ring-offset-1 ring-opacity-60`
-                        : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+                    'inline-flex flex-col items-center justify-center rounded-full px-4 py-1.5 text-sm font-semibold shadow-sm transition',
+                    isSelected ? `${bg} ${fg} ring-2 ring-offset-1` : 'bg-slate-100 text-slate-800 hover:bg-slate-200',
                 ].join(' ')}
                 aria-pressed={isSelected}
             >
-                <span className="whitespace-nowrap text-sm">{label}</span>
+                <span className="whitespace-nowrap">{label}</span>
             </button>
         );
     };
@@ -67,9 +69,10 @@ export default function DashboardSummary({
                         Latest MR Date
                     </h3>
                 </div>
-
-                <p className="mt-2 text-3xl font-bold text-gray-900 tracking-tight">{formatDate(latestDate)}</p>
-                <p className="text-xs text-slate-500 mt-1">Tanggal pembuatan MR terbaru</p>
+                <div className="mt-2">
+                    <p className="mt-2 text-4xl font-bold text-gray-900 tracking-tight">{formatDate(latestDate)}</p>
+                    <p className="text-xs text-slate-500 mt-1">Tanggal pembuatan MR terbaru</p>
+                </div>
             </div>
 
             {/* Nearest Required By */}
@@ -81,8 +84,10 @@ export default function DashboardSummary({
                     </h3>
                 </div>
 
-                <p className="mt-2 text-3xl font-bold text-gray-900 tracking-tight">{formatDate(nearestRequiredBy)}</p>
-                <p className="text-xs text-slate-500 mt-1">Tanggal permintaan terdekat</p>
+                <div className="mt-2">
+                    <p className="mt-2 text-4xl font-bold text-gray-900 tracking-tight">{formatDate(nearestRequiredBy)}</p>
+                    <p className="text-xs text-slate-500 mt-1">Tanggal permintaan terdekat</p>
+                </div>
             </div>
 
             {/* MR Status Summary (clickable) */}
@@ -93,24 +98,39 @@ export default function DashboardSummary({
                         Material Request Status
                     </h3>
 
-                    {/* show selected department (if any) with clear action */}
+                    {/* refresh button placed here (small) */}
                     <div className="flex items-center gap-2">
-                        {selectedDepartment ? (
-                            <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                                <span className="truncate max-w-[10rem]">{selectedDepartment}</span>
-                                <button
-                                    type="button"
-                                    onClick={() => onSelectDepartment?.(null)}
-                                    aria-label="Clear department"
-                                    className="rounded-full p-1 hover:bg-slate-200"
-                                >
-                                    <X className="h-3 w-3" />
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="text-xs text-slate-400">All departments</div>
-                        )}
+                        {onRefresh ? (
+                            <button
+                                type="button"
+                                onClick={onRefresh}
+                                title="Reset semua filter dan refresh"
+                                className="inline-flex items-center gap-2 rounded-md bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                            >
+                                <RefreshCw className="h-4 w-4" />
+                                Refresh
+                            </button>
+                        ) : null}
                     </div>
+                </div>
+
+                {/* show selected department (if any) with clear action */}
+                <div className="flex items-center justify-end mb-2">
+                    {selectedDepartment ? (
+                        <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                            <span className="truncate max-w-[10rem]">{selectedDepartment}</span>
+                            <button
+                                type="button"
+                                onClick={() => onSelectDepartment?.(null)}
+                                aria-label="Clear department"
+                                className="rounded-full p-1 hover:bg-slate-200"
+                            >
+                                <X className="h-3 w-3" />
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="text-xs text-slate-400">All departments</div>
+                    )}
                 </div>
 
                 <div className="flex flex-wrap items-start gap-4">

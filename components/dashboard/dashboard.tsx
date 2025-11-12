@@ -2,6 +2,8 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { RefreshCw } from 'lucide-react';
 import DashboardTable from '@/components/dashboard/dashboard-table';
 import { useItems } from '@/hooks/useItemData';
 import {
@@ -33,6 +35,8 @@ type Row = {
 };
 
 export default function Dashboard() {
+    const queryClient = useQueryClient();
+
     // interactive filters (single selection)
     const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
     const [selectedDept, setSelectedDept] = useState<string | null>(null);
@@ -107,10 +111,6 @@ export default function Dashboard() {
 
     // ----------------------------
     // Use filtered MRs for table aggregation and other derived data.
-    // Logic:
-    // - If user selected a status, pass that status (string).
-    // - If no status selected, default to ['draft','partially ordered'] to keep original behavior.
-    // - Pass selectedDept, selectedBranch, selectedProject so filteredMRs respects all filters.
     const statusesForAgg = selectedStatus ? selectedStatus : ['draft', 'partially ordered'];
 
     const { filtered: filteredMRs = [] } = useFilteredMaterialRequests({
@@ -209,9 +209,25 @@ export default function Dashboard() {
         end_date: null,
     });
 
+    // reset handler (clears all filters and refetch)
+    const handleResetAll = () => {
+        setSelectedStatus(null);
+        setSelectedDept(null);
+        setSelectedBranch(null);
+        setSelectedProject(null);
+        setSearchId('');
+        setSearchName('');
+        setOnlyNeeded(true);
+        setPage(1);
+
+        // ask react-query to refetch material requests
+        queryClient.invalidateQueries({ queryKey: ['material-request', 'list'] });
+    };
+
     return (
         <div className="p-2 space-y-4">
-
+            {/* DashboardSummary tanpa judul di sini.
+                Tombol refresh sekarang ada di dalam DashboardSummary (MR Status card). */}
             <DashboardSummary
                 latestDate={latestDate ?? undefined}
                 nearestRequiredBy={nearestRequiredBy ?? undefined}
@@ -229,11 +245,12 @@ export default function Dashboard() {
                 onSelectDepartment={(d) => {
                     setSelectedDept((prev) => (prev === d ? null : d));
                 }}
+                onRefresh={handleResetAll}
             />
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                 <div className="md:col-span-1 space-y-3">
-                    {/* Project select (simple) */}
+                    {/* Project select */}
                     <div className="rounded-xl border border-slate-200 bg-white p-3">
                         <label className="text-sm text-slate-600 mb-2 block">Project</label>
                         <select

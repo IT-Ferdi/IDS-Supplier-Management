@@ -98,6 +98,12 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
         return { mrRows: rows, projects, costCenters, departments, mrIds };
     }, [mrs, item]);
 
+    const handleMrClick = (orderName: string) => {
+        const encodedName = encodeURIComponent(orderName);
+        const url = `https://erpintidaya.jasaweb.co/app/material-request/${encodedName}`;
+        window.open(url, '_blank');
+    };
+
     return (
         <AnimatePresence>
             {item && (
@@ -173,10 +179,16 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                                 ) : mrIds.length === 0 ? (
                                     <p className="text-sm text-slate-500">Tidak ada MR terkait.</p>
                                 ) : (
-                                    <Card className="p-3">
+                                    <Card className="p-3"
+                                    >
                                         <div className="space-y-2 max-h-52 overflow-y-auto">
                                             {mrIds.map((m) => (
-                                                <div key={m.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-white">
+                                                <div
+                                                    key={m.id}
+                                                    onClick={() => handleMrClick(m.id)}
+                                                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-white cursor-pointer 
+             hover:bg-slate-50 hover:border-sky-200 transition-colors duration-150"
+                                                >
                                                     <div className="flex items-start justify-between w-full">
                                                         {/* Kiri: ID, tanggal + status */}
                                                         <div className="min-w-0">
