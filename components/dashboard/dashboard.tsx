@@ -3,7 +3,6 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
 import DashboardTable from '@/components/dashboard/dashboard-table';
 import { useItems } from '@/hooks/useItemData';
 import {
@@ -12,7 +11,8 @@ import {
     useMaterialRequestDepartmentSummary,
     useFilteredMaterialRequests,
     useMaterialRequestBranchSummary,
-    useMaterialRequestProjectList
+    useMaterialRequestProjectList,
+    useMaterialRequestTypeSummary
 } from '@/hooks/useMaterialRequestData';
 import { useTransactionData } from '@/hooks/useTransactionData';
 import type { ItemRow } from '@/types/item';
@@ -34,6 +34,8 @@ type Row = {
     lastSupplier?: { id?: string; name?: string; date?: string } | null;
 };
 
+type MRType = 'Project' | 'Operational' | 'Stock' | 'Lain-lain';
+
 export default function Dashboard() {
     const queryClient = useQueryClient();
 
@@ -43,20 +45,32 @@ export default function Dashboard() {
     const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
     const [selectedProject, setSelectedProject] = useState<string | null>(null);
 
+    // NEW: selected type filter (Project / Operational / Stock / Lain-lain)
+    const [selectedType, setSelectedType] = useState<MRType | null>(null);
+
     const { data: items = [], isLoading: loadingItems } = useItems();
     const { data: mrs = [], isLoading: loadingMr } = useMaterialRequestData();
     const { data: transactions = [] } = useTransactionData();
 
-    // project list hook
+    // project list hook (will be used by select)
     const { projects: projectList = [] } = useMaterialRequestProjectList({
         selectedStatus,
         selectedBranch,
+        selectedType,
         start_date: null,
         end_date: null,
     });
 
+    // type summary hook (gives counts per MR type)
+    const { data: typeData = [], total: typeTotal = 0 } = useMaterialRequestTypeSummary({
+        selectedStatus,
+        selectedBranch,
+        selectedProject,
+        selectedType,
+    });
+
     const { data: branchData = [], total: branchTotal = 0, isLoading: branchLoading } =
-        useMaterialRequestBranchSummary({ selectedStatus, selectedProject, start_date: null, end_date: null });
+        useMaterialRequestBranchSummary({ selectedStatus, selectedProject, selectedType, start_date: null, end_date: null });
 
     const [page, setPage] = useState(1);
     const pageSize = 4;
@@ -70,12 +84,19 @@ export default function Dashboard() {
     const [openItemId, setOpenItemId] = useState<string | null>(null);
     const selectedItem = openItemId ? (items as ItemRow[]).find((it) => it.id === openItemId) ?? null : null;
 
-    // department summary for chart (reactive to selectedStatus + selectedBranch + selectedProject)
+    // department summary for chart (reactive to all filters incl. selectedType)
     const {
         data: deptData = [],
         total: deptTotal = 0,
         isLoading: deptLoading,
-    } = useMaterialRequestDepartmentSummary({ selectedStatus, selectedBranch, selectedProject, start_date: null, end_date: null });
+    } = useMaterialRequestDepartmentSummary({
+        selectedStatus,
+        selectedBranch,
+        selectedProject,
+        selectedType,
+        start_date: null,
+        end_date: null,
+    });
 
     // map to chart input: {name, value}
     const chartInput = (deptData || []).map((d) => ({ name: d.name, value: d.count }));
@@ -83,7 +104,7 @@ export default function Dashboard() {
     // reset page when filters change
     useEffect(() => {
         setPage(1);
-    }, [searchId, searchName, onlyNeeded, selectedStatus, selectedDept, selectedBranch, selectedProject]);
+    }, [searchId, searchName, onlyNeeded, selectedStatus, selectedDept, selectedBranch, selectedProject, selectedType]);
 
     // last purchase per item (from transactions)
     const lastPurchaseByItem = useMemo(() => {
@@ -111,6 +132,7 @@ export default function Dashboard() {
 
     // ----------------------------
     // Use filtered MRs for table aggregation and other derived data.
+    // include selectedType so filteredMRs respects type filter too.
     const statusesForAgg = selectedStatus ? selectedStatus : ['draft', 'partially ordered'];
 
     const { filtered: filteredMRs = [] } = useFilteredMaterialRequests({
@@ -118,6 +140,7 @@ export default function Dashboard() {
         selectedDepartment: selectedDept,
         selectedBranch,
         selectedProject,
+        selectedType,
     });
     // ----------------------------
 
@@ -192,7 +215,7 @@ export default function Dashboard() {
         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${cls}`}>{children}</span>
     );
 
-    // summary from hook (reactive to selectedStatus + selectedDept + selectedBranch + selectedProject)
+    // summary from hook (reactive to all filters)
     const {
         latestDate,
         nearestRequiredBy,
@@ -205,6 +228,7 @@ export default function Dashboard() {
         selectedDepartment: selectedDept,
         selectedBranch,
         selectedProject,
+        selectedType,
         start_date: null,
         end_date: null,
     });
@@ -215,6 +239,7 @@ export default function Dashboard() {
         setSelectedDept(null);
         setSelectedBranch(null);
         setSelectedProject(null);
+        setSelectedType(null);
         setSearchId('');
         setSearchName('');
         setOnlyNeeded(true);
@@ -226,20 +251,15 @@ export default function Dashboard() {
 
     return (
         <div className="p-2 space-y-4">
-            {/* DashboardSummary tanpa judul di sini.
-                Tombol refresh sekarang ada di dalam DashboardSummary (MR Status card). */}
             <DashboardSummary
                 latestDate={latestDate ?? undefined}
                 nearestRequiredBy={nearestRequiredBy ?? undefined}
                 totalMR={totalMR}
                 draftCount={draftCount}
                 partiallyOrderedCount={partiallyOrderedCount}
-                // interactivity props
                 selectedStatus={selectedStatus}
                 onSelectStatus={(st) => {
                     setSelectedStatus((prev) => (prev === st ? null : st));
-                    // optional: clear department or project when status changes:
-                    // setSelectedDept(null); setSelectedProject(null);
                 }}
                 selectedDepartment={selectedDept}
                 onSelectDepartment={(d) => {
@@ -250,7 +270,7 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                 <div className="md:col-span-1 space-y-3">
-                    {/* Project select */}
+                    {/* Project select (restored) */}
                     <div className="rounded-xl border border-slate-200 bg-white p-3">
                         <label className="text-sm text-slate-600 mb-2 block">Project</label>
                         <select
@@ -274,20 +294,23 @@ export default function Dashboard() {
                     />
                 </div>
 
-                {!loading && !deptLoading && chartInput && chartInput.length > 0 ? (
+                {!loading && !deptLoading ? (
                     <div className="md:col-span-2 row-span-1">
                         <DepartmentChart
-                            data={chartInput}
+                            data={typeData.map((t: any) => ({ name: t.type ?? t.name ?? t.name, value: t.count ?? t.value ?? 0 }))}
                             selectedStatus={selectedStatus}
                             selectedDept={selectedDept}
-                            onDeptClick={(name) => setSelectedDept((s) => (s === name ? null : name))}
-                            title="Department"
+                            onDeptClick={(name) => {
+                                // name corresponds to type (Project / Operational / Stock / Lain-lain)
+                                setSelectedType((prev) => (prev === name ? null : (name as MRType)));
+                            }}
+                            title="Tipe MR"
                             height={387}
                         />
                     </div>
                 ) : (
                     <div className="md:col-span-2 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 flex items-center justify-center">
-                        Loading department data...
+                        Loading data...
                     </div>
                 )}
             </div>
@@ -298,7 +321,6 @@ export default function Dashboard() {
                         { key: 'id', header: 'Code', width: '120px', className: 'font-mono' },
                         { key: 'name', header: 'Name', width: '260px' },
                         { key: 'category', header: 'Category', width: '160px' },
-                        { key: 'uom', header: 'UOM', width: '80px', className: 'text-center' },
                         {
                             key: 'asked',
                             header: 'Qty Asked',
@@ -331,6 +353,7 @@ export default function Dashboard() {
                                 </Badge>
                             ),
                         },
+                        { key: 'uom', header: 'UOM', width: '80px', className: 'text-center' },
                         {
                             key: 'lastSupplier',
                             header: 'Last Purchased From',

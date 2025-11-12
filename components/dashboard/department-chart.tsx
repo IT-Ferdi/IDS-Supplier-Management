@@ -17,7 +17,7 @@ export default function DepartmentChart({
     selectedStatus = null, // optional; dapat dipakai untuk info/label UI
     selectedDept = null,
     onDeptClick,
-    title = 'Departments',
+    title = 'Material Request Types',
     height = 220,
 }: {
     data: InputDatum[]; // [{ name, value }]
