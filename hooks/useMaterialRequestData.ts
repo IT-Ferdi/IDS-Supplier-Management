@@ -42,27 +42,21 @@ function costCenterToBranch(costCenter?: string) {
 function classifyProjectType(projectRaw?: string) {
     const p = (projectRaw ?? '').toString().trim().toUpperCase();
     if (!p) return 'Lain-lain';
-    // project patterns: SO-..., SOW-..., PK/..., PPM/..., PP/...
     const projectPatterns = [/^SO-/, /^SOW-/, /^PK\//, /^PPM\//, /^PP\//];
     if (projectPatterns.some(rx => rx.test(p))) return 'Project';
-    // Operational detection: commonly starts with 'OPERATIONAL' but keep flexible
     if (p.startsWith('OPERATIONAL') || p.startsWith('OPERATIONAL-')) return 'Operational';
     if (p === 'STOCK') return 'Stock';
     return 'Lain-lain';
 }
 
-// Determine MR type by items with priority: Project > Operational > Stock > Lain-lain
 function getMrType(mr: MaterialRequest) {
     if (!Array.isArray(mr.items) || mr.items.length === 0) return 'Lain-lain';
-    // check Project first
     for (const it of mr.items) {
         if (classifyProjectType(it.project) === 'Project') return 'Project';
     }
-    // operational
     for (const it of mr.items) {
         if (classifyProjectType(it.project) === 'Operational') return 'Operational';
     }
-    // stock
     for (const it of mr.items) {
         if (classifyProjectType(it.project) === 'Stock') return 'Stock';
     }
@@ -79,8 +73,10 @@ export type MRFilterParams = {
     branch?: string | null;
     selectedBranch?: string | null;
     selectedType?: MRType | null;
-    start_date?: string | null;
-    end_date?: string | null;
+    start_date?: string | null;        // transaction_date start
+    end_date?: string | null;          // transaction_date end
+    required_start?: string | null;    // required_by start
+    required_end?: string | null;      // required_by end
     selectedDepartment?: string | null;
     selectedCostCenter?: string | null;
     selectedProject?: string | null;
@@ -88,13 +84,20 @@ export type MRFilterParams = {
 
 /**
  * useFilteredMaterialRequests
- * - return filtered MR array (use this in dashboard to compute aggByItem)
- * - supports selectedType
  */
 export function useFilteredMaterialRequests(params: MRFilterParams = {}) {
     const { data: mrs = [], isLoading, error } = useMaterialRequestData();
     const {
-        selectedStatus, selectedDepartment, selectedCostCenter, selectedProject, start_date, end_date, selectedBranch, selectedType
+        selectedStatus,
+        selectedDepartment,
+        selectedCostCenter,
+        selectedProject,
+        start_date,
+        end_date,
+        selectedBranch,
+        selectedType,
+        required_start,
+        required_end,
     } = params;
 
     const normalizedStatuses = useMemo(() => {
@@ -105,6 +108,9 @@ export function useFilteredMaterialRequests(params: MRFilterParams = {}) {
     const startTime = useMemo(() => (start_date ? new Date(start_date).setHours(0, 0, 0, 0) : null), [start_date]);
     const endTime = useMemo(() => (end_date ? new Date(end_date).setHours(23, 59, 59, 999) : null), [end_date]);
 
+    const reqStartTime = useMemo(() => (required_start ? new Date(required_start).setHours(0, 0, 0, 0) : null), [required_start]);
+    const reqEndTime = useMemo(() => (required_end ? new Date(required_end).setHours(23, 59, 59, 999) : null), [required_end]);
+
     const filtered = useMemo(() => {
         if (!Array.isArray(mrs)) return [];
         return mrs.filter((mr) => {
@@ -114,11 +120,18 @@ export function useFilteredMaterialRequests(params: MRFilterParams = {}) {
                 if (!normalizedStatuses.includes(st)) return false;
             }
 
-            // date range (transaction_date)
+            // transaction_date range
             if ((startTime || endTime) && mr.transaction_date) {
                 const t = new Date(mr.transaction_date).getTime();
                 if (startTime && t < startTime) return false;
                 if (endTime && t > endTime) return false;
+            }
+
+            // required_by range
+            if ((reqStartTime || reqEndTime) && mr.required_by) {
+                const r = new Date(mr.required_by).getTime();
+                if (reqStartTime && r < reqStartTime) return false;
+                if (reqEndTime && r > reqEndTime) return false;
             }
 
             // selectedDepartment (item-level)
@@ -139,13 +152,13 @@ export function useFilteredMaterialRequests(params: MRFilterParams = {}) {
                 if (!ok) return false;
             }
 
-            // selectedBranch: match mr.cost_center -> branch
+            // selectedBranch
             if (selectedBranch) {
                 const branch = costCenterToBranch(mr.cost_center);
                 if (branch !== selectedBranch) return false;
             }
 
-            // selectedType: classify MR and compare
+            // selectedType
             if (selectedType) {
                 const mrType = getMrType(mr);
                 if (mrType !== selectedType) return false;
@@ -153,7 +166,7 @@ export function useFilteredMaterialRequests(params: MRFilterParams = {}) {
 
             return true;
         });
-    }, [mrs, normalizedStatuses, startTime, endTime, selectedDepartment, selectedCostCenter, selectedProject, selectedBranch, selectedType]);
+    }, [mrs, normalizedStatuses, startTime, endTime, reqStartTime, reqEndTime, selectedDepartment, selectedCostCenter, selectedProject, selectedBranch, selectedType]);
 
     return {
         filtered,
@@ -165,8 +178,6 @@ export function useFilteredMaterialRequests(params: MRFilterParams = {}) {
 
 /**
  * Project list hook
- * - Menghasilkan daftar project (name, value, count)
- * - Params optional: selectedStatus, selectedBranch, selectedType, date range
  */
 export function useMaterialRequestProjectList(params?: {
     selectedStatus?: string | string[] | null;
@@ -174,9 +185,11 @@ export function useMaterialRequestProjectList(params?: {
     selectedType?: MRType | null;
     start_date?: string | null;
     end_date?: string | null;
+    required_start?: string | null;
+    required_end?: string | null;
 }) {
     const { data: mrs = [], isLoading, error } = useMaterialRequestData();
-    const { selectedStatus, selectedBranch, selectedType, start_date, end_date } = params ?? {};
+    const { selectedStatus, selectedBranch, selectedType, start_date, end_date, required_start, required_end } = params ?? {};
 
     const normalizedStatuses = useMemo(() => {
         if (!selectedStatus) return null;
@@ -186,35 +199,40 @@ export function useMaterialRequestProjectList(params?: {
     const startTime = useMemo(() => (start_date ? new Date(start_date).setHours(0, 0, 0, 0) : null), [start_date]);
     const endTime = useMemo(() => (end_date ? new Date(end_date).setHours(23, 59, 59, 999) : null), [end_date]);
 
+    const reqStartTime = useMemo(() => (required_start ? new Date(required_start).setHours(0, 0, 0, 0) : null), [required_start]);
+    const reqEndTime = useMemo(() => (required_end ? new Date(required_end).setHours(23, 59, 59, 999) : null), [required_end]);
+
     const result = useMemo(() => {
         if (!Array.isArray(mrs) || mrs.length === 0) return { projects: [], total: 0 };
 
         const map = new Map<string, number>();
 
         mrs.forEach(mr => {
-            // status filter
             if (normalizedStatuses && normalizedStatuses.length > 0) {
                 const st = (mr.status ?? '').toString().toLowerCase();
                 if (!normalizedStatuses.includes(st)) return;
             }
 
-            // branch filter
             if (selectedBranch) {
                 const branch = costCenterToBranch(mr.cost_center);
                 if (branch !== selectedBranch) return;
             }
 
-            // type filter
             if (selectedType) {
                 const mrType = getMrType(mr);
                 if (mrType !== selectedType) return;
             }
 
-            // date range
             if ((startTime || endTime) && mr.transaction_date) {
                 const t = new Date(mr.transaction_date).getTime();
                 if (startTime && t < startTime) return;
                 if (endTime && t > endTime) return;
+            }
+
+            if ((reqStartTime || reqEndTime) && mr.required_by) {
+                const r = new Date(mr.required_by).getTime();
+                if (reqStartTime && r < reqStartTime) return;
+                if (reqEndTime && r > reqEndTime) return;
             }
 
             (mr.items || []).forEach((it: MaterialRequestItem) => {
@@ -227,13 +245,13 @@ export function useMaterialRequestProjectList(params?: {
         const arr = Array.from(map.entries()).map(([name, count]) => ({ name, value: name, count }));
         arr.sort((a, b) => b.count - a.count);
         return { projects: arr, total: arr.reduce((s, x) => s + x.count, 0) };
-    }, [mrs, normalizedStatuses, selectedBranch, selectedType, startTime, endTime]);
+    }, [mrs, normalizedStatuses, selectedBranch, selectedType, startTime, endTime, reqStartTime, reqEndTime]);
 
     return { isLoading, error, ...result };
 }
 
 /**
- * Department summary (accept selectedBranch, selectedStatus, selectedProject, selectedType)
+ * Department summary
  */
 export function useMaterialRequestDepartmentSummary(params?: {
     selectedStatus?: string | string[] | null;
@@ -242,9 +260,11 @@ export function useMaterialRequestDepartmentSummary(params?: {
     selectedType?: MRType | null;
     start_date?: string | null;
     end_date?: string | null;
+    required_start?: string | null;
+    required_end?: string | null;
 }) {
     const { data: mrs = [], isLoading, error } = useMaterialRequestData();
-    const { selectedStatus, selectedBranch, selectedProject, selectedType, start_date, end_date } = params ?? {};
+    const { selectedStatus, selectedBranch, selectedProject, selectedType, start_date, end_date, required_start, required_end } = params ?? {};
 
     const normalizedStatuses = useMemo(() => {
         if (!selectedStatus) return null;
@@ -253,6 +273,9 @@ export function useMaterialRequestDepartmentSummary(params?: {
 
     const startTime = useMemo(() => (start_date ? new Date(start_date).setHours(0, 0, 0, 0) : null), [start_date]);
     const endTime = useMemo(() => (end_date ? new Date(end_date).setHours(23, 59, 59, 999) : null), [end_date]);
+
+    const reqStartTime = useMemo(() => (required_start ? new Date(required_start).setHours(0, 0, 0, 0) : null), [required_start]);
+    const reqEndTime = useMemo(() => (required_end ? new Date(required_end).setHours(23, 59, 59, 999) : null), [required_end]);
 
     const departmentMapping: { [key: string]: string } = {
         'CONDITION BASE MONITORING - IDS': 'CONDITION BASE MONITORING',
@@ -291,38 +314,38 @@ export function useMaterialRequestDepartmentSummary(params?: {
         const map = new Map<string, number>();
 
         mrs.forEach((mr) => {
-            // status filter
             if (normalizedStatuses && normalizedStatuses.length > 0) {
                 const st = (mr.status ?? '').toString().toLowerCase();
                 if (!normalizedStatuses.includes(st)) return;
             }
 
-            // branch filter
             if (selectedBranch) {
                 const branch = costCenterToBranch(mr.cost_center);
                 if (branch !== selectedBranch) return;
             }
 
-            // type filter
             if (selectedType) {
                 const mrType = getMrType(mr);
                 if (mrType !== selectedType) return;
             }
 
-            // date range
             if ((startTime || endTime) && mr.transaction_date) {
                 const t = new Date(mr.transaction_date).getTime();
                 if (startTime && t < startTime) return;
                 if (endTime && t > endTime) return;
             }
 
-            // project filter (item-level)
+            if ((reqStartTime || reqEndTime) && mr.required_by) {
+                const r = new Date(mr.required_by).getTime();
+                if (reqStartTime && r < reqStartTime) return;
+                if (reqEndTime && r > reqEndTime) return;
+            }
+
             if (selectedProject) {
                 const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.project ?? '') as string).toLowerCase().includes(selectedProject.toLowerCase()));
                 if (!ok) return;
             }
 
-            // collect unique departments in this MR
             const seen = new Set<string>();
             (mr.items || []).forEach((it: MaterialRequestItem) => {
                 const raw = (it.department ?? '').toString().trim().toUpperCase();
@@ -346,7 +369,7 @@ export function useMaterialRequestDepartmentSummary(params?: {
         }));
 
         return { data, total };
-    }, [mrs, normalizedStatuses, selectedBranch, selectedProject, selectedType, startTime, endTime]);
+    }, [mrs, normalizedStatuses, selectedBranch, selectedProject, selectedType, startTime, endTime, reqStartTime, reqEndTime]);
 
     return {
         isLoading,
@@ -356,7 +379,7 @@ export function useMaterialRequestDepartmentSummary(params?: {
 }
 
 /**
- * Summary hook (accept selectedBranch + selectedDept + selectedStatus + selectedProject + selectedType)
+ * Summary hook
  */
 export function useMaterialRequestSummary(params?: {
     selectedStatus?: string | string[] | null;
@@ -366,9 +389,11 @@ export function useMaterialRequestSummary(params?: {
     selectedType?: MRType | null;
     start_date?: string | null;
     end_date?: string | null;
+    required_start?: string | null;
+    required_end?: string | null;
 }) {
     const { data: mrs = [], isLoading, error } = useMaterialRequestData();
-    const { selectedStatus, selectedDepartment, selectedBranch, selectedProject, selectedType, start_date, end_date } = params ?? {};
+    const { selectedStatus, selectedDepartment, selectedBranch, selectedProject, selectedType, start_date, end_date, required_start, required_end } = params ?? {};
 
     const normalizedStatuses = useMemo(() => {
         if (!selectedStatus) return null;
@@ -378,12 +403,14 @@ export function useMaterialRequestSummary(params?: {
     const startTime = useMemo(() => (start_date ? new Date(start_date).setHours(0, 0, 0, 0) : null), [start_date]);
     const endTime = useMemo(() => (end_date ? new Date(end_date).setHours(23, 59, 59, 999) : null), [end_date]);
 
+    const reqStartTime = useMemo(() => (required_start ? new Date(required_start).setHours(0, 0, 0, 0) : null), [required_start]);
+    const reqEndTime = useMemo(() => (required_end ? new Date(required_end).setHours(23, 59, 59, 999) : null), [required_end]);
+
     const result = useMemo(() => {
         if (!Array.isArray(mrs) || mrs.length === 0) {
             return { latestDate: null, nearestRequiredBy: null, totalMR: 0, draftCount: 0, partiallyOrderedCount: 0 };
         }
 
-        // new semantics: find earliest (oldest) transaction_date and earliest required_by
         let oldestTransactionIso: string | null = null;
         let oldestRequiredByIso: string | null = null;
         let oldestRequiredByTs: number | null = null;
@@ -394,51 +421,49 @@ export function useMaterialRequestSummary(params?: {
         let pending = 0;
 
         mrs.forEach((mr) => {
-            // status filter
             if (normalizedStatuses && normalizedStatuses.length > 0) {
                 const st = (mr.status ?? '').toString().toLowerCase();
                 if (!normalizedStatuses.includes(st)) return;
             }
 
-            // branch filter
             if (selectedBranch) {
                 const branch = costCenterToBranch(mr.cost_center);
                 if (branch !== selectedBranch) return;
             }
 
-            // type filter
             if (selectedType) {
                 const mrType = getMrType(mr);
                 if (mrType !== selectedType) return;
             }
 
-            // date range filter (transaction_date)
             if ((startTime || endTime) && mr.transaction_date) {
                 const t = new Date(mr.transaction_date).getTime();
                 if (startTime && t < startTime) return;
                 if (endTime && t > endTime) return;
             }
 
-            // department filter (item-level)
+            if ((reqStartTime || reqEndTime) && mr.required_by) {
+                const r = new Date(mr.required_by).getTime();
+                if (reqStartTime && r < reqStartTime) return;
+                if (reqEndTime && r > reqEndTime) return;
+            }
+
             if (selectedDepartment) {
                 const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.department ?? '') as string).toLowerCase().includes(selectedDepartment.toLowerCase()));
                 if (!ok) return;
             }
 
-            // project filter (item-level)
             if (selectedProject) {
                 const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.project ?? '') as string).toLowerCase().includes(selectedProject.toLowerCase()));
                 if (!ok) return;
             }
 
-            // count MR
             total++;
             const st = (mr.status ?? '').toString().toLowerCase();
             if (st === 'draft') draft++;
             if (st === 'partially ordered') partial++;
             if (st === 'pending') pending++;
 
-            // track oldest transaction_date (earliest)
             if (mr.transaction_date) {
                 const t = new Date(mr.transaction_date);
                 if (!isNaN(t.getTime())) {
@@ -448,14 +473,12 @@ export function useMaterialRequestSummary(params?: {
                 }
             }
 
-            // track oldest required_by (earliest)
             if (mr.required_by) {
                 const d = new Date(mr.required_by);
                 if (!isNaN(d.getTime())) {
                     const ts = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
                     if (oldestRequiredByTs === null || ts < oldestRequiredByTs) {
                         oldestRequiredByTs = ts;
-                        // store original ISO/string (keep the raw value)
                         oldestRequiredByIso = mr.required_by;
                     }
                 }
@@ -463,14 +486,14 @@ export function useMaterialRequestSummary(params?: {
         });
 
         return {
-            latestDate: oldestTransactionIso,         // now 'oldest MR' (earliest transaction_date)
-            nearestRequiredBy: oldestRequiredByIso,  // now 'oldest required_by'
+            latestDate: oldestTransactionIso,
+            nearestRequiredBy: oldestRequiredByIso,
             totalMR: total,
             draftCount: draft,
             partiallyOrderedCount: partial,
             pendingCount: pending,
         };
-    }, [mrs, normalizedStatuses, selectedDepartment, selectedBranch, selectedProject, selectedType, startTime, endTime]);
+    }, [mrs, normalizedStatuses, selectedDepartment, selectedBranch, selectedProject, selectedType, startTime, endTime, reqStartTime, reqEndTime]);
 
     return {
         isLoading,
@@ -480,8 +503,7 @@ export function useMaterialRequestSummary(params?: {
 }
 
 /**
- * Branch summary hook (counts MR per branch)
- * - accept selectedProject and selectedType as optional params too
+ * Branch summary hook
  */
 export function useMaterialRequestBranchSummary(params?: {
     selectedStatus?: string | string[] | null;
@@ -489,9 +511,11 @@ export function useMaterialRequestBranchSummary(params?: {
     selectedType?: MRType | null;
     start_date?: string | null;
     end_date?: string | null;
+    required_start?: string | null;
+    required_end?: string | null;
 }) {
     const { data: mrs = [], isLoading, error } = useMaterialRequestData();
-    const { selectedStatus, selectedProject, selectedType, start_date, end_date } = params ?? {};
+    const { selectedStatus, selectedProject, selectedType, start_date, end_date, required_start, required_end } = params ?? {};
 
     const normalizedStatuses = useMemo(() => {
         if (!selectedStatus) return null;
@@ -505,6 +529,9 @@ export function useMaterialRequestBranchSummary(params?: {
 
     const startTime = useMemo(() => (start_date ? new Date(start_date).setHours(0, 0, 0, 0) : null), [start_date]);
     const endTime = useMemo(() => (end_date ? new Date(end_date).setHours(23, 59, 59, 999) : null), [end_date]);
+
+    const reqStartTime = useMemo(() => (required_start ? new Date(required_start).setHours(0, 0, 0, 0) : null), [required_start]);
+    const reqEndTime = useMemo(() => (required_end ? new Date(required_end).setHours(23, 59, 59, 999) : null), [required_end]);
 
     const result = useMemo(() => {
         if (!Array.isArray(mrs) || mrs.length === 0) return { data: [], total: 0 };
@@ -525,7 +552,12 @@ export function useMaterialRequestBranchSummary(params?: {
                 if (endTime && t > endTime) return;
             }
 
-            // project filter (item-level)
+            if ((reqStartTime || reqEndTime) && mr.required_by) {
+                const r = new Date(mr.required_by).getTime();
+                if (reqStartTime && r < reqStartTime) return;
+                if (reqEndTime && r > reqEndTime) return;
+            }
+
             if (normalizedProjects && normalizedProjects.length > 0) {
                 const ok = Array.isArray(mr.items) && mr.items.some(it => {
                     const p = ((it.project ?? '') as string).toLowerCase();
@@ -534,7 +566,6 @@ export function useMaterialRequestBranchSummary(params?: {
                 if (!ok) return;
             }
 
-            // type filter
             if (selectedType) {
                 const mrType = getMrType(mr);
                 if (mrType !== selectedType) return;
@@ -547,16 +578,13 @@ export function useMaterialRequestBranchSummary(params?: {
         const arr = Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
         const total = arr.reduce((s, x) => s + x.count, 0);
         return { data: arr, total };
-    }, [mrs, normalizedStatuses, normalizedProjects, selectedType, startTime, endTime]);
+    }, [mrs, normalizedStatuses, normalizedProjects, selectedType, startTime, endTime, reqStartTime, reqEndTime]);
 
     return { isLoading, error, ...result };
 }
 
 /**
  * useMaterialRequestTypeSummary
- * - Mengelompokkan MR ke dalam 4 tipe sesuai rules supervisor.
- * - Satu MR dihitung satu kali, berdasarkan prioritas: Project > Operational > Stock > Lain-lain.
- * - Menerima same filter params agar bisa dipanggil with selectedStatus/selectedBranch/selectedProject.
  */
 export type MRTypeCount = { type: 'Project' | 'Operational' | 'Stock' | 'Lain-lain'; count: number };
 
@@ -567,9 +595,11 @@ export function useMaterialRequestTypeSummary(params?: {
     selectedType?: 'Project' | 'Operational' | 'Stock' | 'Lain-lain' | string | null;
     start_date?: string | null;
     end_date?: string | null;
+    required_start?: string | null;
+    required_end?: string | null;
 }) {
     const { data: mrs = [], isLoading, error } = useMaterialRequestData();
-    const { selectedStatus, selectedBranch, selectedProject, selectedType, start_date, end_date } = params ?? {};
+    const { selectedStatus, selectedBranch, selectedProject, selectedType, start_date, end_date, required_start, required_end } = params ?? {};
 
     const normalizedStatuses = useMemo(() => {
         if (!selectedStatus) return null;
@@ -578,7 +608,6 @@ export function useMaterialRequestTypeSummary(params?: {
             : [selectedStatus.toString().toLowerCase()];
     }, [selectedStatus]);
 
-    // normalize selectedType to one of the four canonical values or null
     const normalizedType = useMemo(() => {
         if (!selectedType) return null;
         const t = (selectedType ?? '').toString().trim();
@@ -590,6 +619,9 @@ export function useMaterialRequestTypeSummary(params?: {
 
     const startTime = useMemo(() => (start_date ? new Date(start_date).setHours(0, 0, 0, 0) : null), [start_date]);
     const endTime = useMemo(() => (end_date ? new Date(end_date).setHours(23, 59, 59, 999) : null), [end_date]);
+
+    const reqStartTime = useMemo(() => (required_start ? new Date(required_start).setHours(0, 0, 0, 0) : null), [required_start]);
+    const reqEndTime = useMemo(() => (required_end ? new Date(required_end).setHours(23, 59, 59, 999) : null), [required_end]);
 
     const result = useMemo(() => {
         if (!Array.isArray(mrs) || mrs.length === 0) {
@@ -604,47 +636,45 @@ export function useMaterialRequestTypeSummary(params?: {
         };
 
         mrs.forEach(mr => {
-            // status filter
             if (normalizedStatuses && normalizedStatuses.length > 0) {
                 const st = (mr.status ?? '').toString().toLowerCase();
                 if (!normalizedStatuses.includes(st)) return;
             }
 
-            // branch filter
             if (selectedBranch) {
                 const branch = costCenterToBranch(mr.cost_center);
                 if (branch !== selectedBranch) return;
             }
 
-            // date range
             if ((startTime || endTime) && mr.transaction_date) {
                 const t = new Date(mr.transaction_date).getTime();
                 if (startTime && t < startTime) return;
                 if (endTime && t > endTime) return;
             }
 
-            // project-level filter (opsional)
+            if ((reqStartTime || reqEndTime) && mr.required_by) {
+                const r = new Date(mr.required_by).getTime();
+                if (reqStartTime && r < reqStartTime) return;
+                if (reqEndTime && r > reqEndTime) return;
+            }
+
             if (selectedProject) {
                 const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.project ?? '') as string).toLowerCase().includes(selectedProject.toLowerCase()));
                 if (!ok) return;
             }
 
-            // Klasifikasi MR: per MR cek semua items, ambil prioritas Project > Operational > Stock > Lain-lain
             let assignedType: 'Project' | 'Operational' | 'Stock' | 'Lain-lain' = 'Lain-lain';
             if (Array.isArray(mr.items) && mr.items.length > 0) {
-                // check Project pattern
                 for (const it of mr.items) {
                     const t = classifyProjectType(it.project);
                     if (t === 'Project') { assignedType = 'Project'; break; }
                 }
-                // Operational
                 if (assignedType === 'Lain-lain') {
                     for (const it of mr.items) {
                         const t = classifyProjectType(it.project);
                         if (t === 'Operational') { assignedType = 'Operational'; break; }
                     }
                 }
-                // Stock
                 if (assignedType === 'Lain-lain') {
                     for (const it of mr.items) {
                         const t = classifyProjectType(it.project);
@@ -653,7 +683,6 @@ export function useMaterialRequestTypeSummary(params?: {
                 }
             }
 
-            // jika user memilih selectedType, hanya hitung MR yang tipenya sama
             if (normalizedType && assignedType !== normalizedType) return;
 
             counts[assignedType] = (counts[assignedType] ?? 0) + 1;
@@ -668,21 +697,20 @@ export function useMaterialRequestTypeSummary(params?: {
 
         const total = arr.reduce((s, x) => s + x.count, 0);
         return { data: arr, total };
-    }, [mrs, normalizedStatuses, selectedBranch, selectedProject, normalizedType, startTime, endTime]);
+    }, [mrs, normalizedStatuses, selectedBranch, selectedProject, normalizedType, startTime, endTime, reqStartTime, reqEndTime]);
 
     return { isLoading, error, ...result };
 }
 
-// hooks/useMaterialRequestData.tsx
-// tambahkan tipe param dan hook baru ini di file yang sama dengan hook lainnya
-
+/**
+ * MR Date range hook
+ */
 export type MRDateRangeParams = {
     selectedStatus?: string | string[] | null;
     selectedBranch?: string | null;
     selectedProject?: string | null;
     selectedType?: MRType | null;
     selectedDepartment?: string | null;
-    // pilih field yang dipakai untuk range (default required_by)
     date_field?: 'required_by' | 'transaction_date';
 };
 
@@ -705,7 +733,6 @@ export function useMaterialRequestDateRange(params?: MRDateRangeParams) {
     }, [selectedStatus]);
 
     const result = useMemo(() => {
-        // default today iso
         const today = new Date();
         const isoToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString().slice(0, 10);
 
@@ -717,37 +744,31 @@ export function useMaterialRequestDateRange(params?: MRDateRangeParams) {
         let maxTs: number | null = null;
 
         for (const mr of mrs) {
-            // status filter
             if (normalizedStatuses && normalizedStatuses.length > 0) {
                 const st = (mr.status ?? '').toString().toLowerCase();
                 if (!normalizedStatuses.includes(st)) continue;
             }
 
-            // branch filter
             if (selectedBranch) {
                 const branch = costCenterToBranch(mr.cost_center);
                 if (branch !== selectedBranch) continue;
             }
 
-            // type filter
             if (selectedType) {
                 const mrType = getMrType(mr);
                 if (mrType !== selectedType) continue;
             }
 
-            // department filter (item-level)
             if (selectedDepartment) {
                 const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.department ?? '') as string).toLowerCase().includes(selectedDepartment.toLowerCase()));
                 if (!ok) continue;
             }
 
-            // project filter (item-level)
             if (selectedProject) {
                 const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.project ?? '') as string).toLowerCase().includes(selectedProject.toLowerCase()));
                 if (!ok) continue;
             }
 
-            // get the date value from mr using date_field
             const raw = (mr as any)[date_field];
             if (!raw) continue;
             const d = new Date(raw);
@@ -765,7 +786,3 @@ export function useMaterialRequestDateRange(params?: MRDateRangeParams) {
 
     return { minDate: result.minDate, maxDate: result.maxDate, isLoading, error };
 }
-
-
-
-

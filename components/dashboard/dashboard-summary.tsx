@@ -2,8 +2,19 @@
 
 import React from 'react';
 import { Package, CalendarDays, Clock, X, RefreshCw } from 'lucide-react';
+import DateRangeInputs from '@/components/ui/date-range-inputs';
 
 type Props = {
+    // MR transaction_date range (controlled by parent)
+    mrStart?: string | null;
+    mrEnd?: string | null;
+    onMrChange?: (s: string | null, e: string | null) => void;
+
+    // Required-by range
+    reqStart?: string | null;
+    reqEnd?: string | null;
+    onReqChange?: (s: string | null, e: string | null) => void;
+
     latestDate?: string;
     nearestRequiredBy?: string;
     totalMR: number;
@@ -23,6 +34,12 @@ type Props = {
 };
 
 export default function DashboardSummary({
+    mrStart,
+    mrEnd,
+    onMrChange,
+    reqStart,
+    reqEnd,
+    onReqChange,
     latestDate,
     nearestRequiredBy,
     totalMR,
@@ -63,32 +80,45 @@ export default function DashboardSummary({
 
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {/* Latest MR Date */}
+            {/* MR Date Range (uses DateRangeInputs) */}
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-slate-600 flex items-center gap-1.5">
                         <CalendarDays className="h-4 w-4 text-sky-600" />
-                        Oldest MR Date
+                        MR Date Range
                     </h3>
                 </div>
-                <div className="mt-2">
-                    <p className="mt-2 text-4xl font-bold text-gray-900 tracking-tight">{formatDate(latestDate)}</p>
-                    <p className="text-xs text-slate-500 mt-1">Tanggal pembuatan MR terdahulu</p>
+
+                <div className="mt-3">
+                    <DateRangeInputs
+                        start={mrStart}
+                        end={mrEnd}
+                        onChange={(s, e) => onMrChange?.(s, e)}
+                    />
+                    <div className="mt-2 font-semibold text-xs text-slate-700">
+                        Range tanggal Transaction Material Request.
+                    </div>
                 </div>
             </div>
 
-            {/* Nearest Required By */}
+            {/* Required-by Range */}
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-slate-600 flex items-center gap-1.5">
                         <Clock className="h-4 w-4 text-amber-600" />
-                        Oldest Required By
+                        Required-by Range
                     </h3>
                 </div>
 
-                <div className="mt-2">
-                    <p className="mt-2 text-4xl font-bold text-gray-900 tracking-tight">{formatDate(nearestRequiredBy)}</p>
-                    <p className="text-xs text-slate-500 mt-1">Tanggal permintaan terdahulu</p>
+                <div className="mt-3">
+                    <DateRangeInputs
+                        start={reqStart}
+                        end={reqEnd}
+                        onChange={(s, e) => onReqChange?.(s, e)}
+                    />
+                    <div className="mt-2 font-semibold text-xs text-slate-700">
+                        Range tanggal Required By Material Request
+                    </div>
                 </div>
             </div>
 
@@ -100,7 +130,6 @@ export default function DashboardSummary({
                         Material Request Status
                     </h3>
 
-                    {/* refresh button placed here (small) */}
                     <div className="flex items-center gap-2">
                         {onRefresh ? (
                             <button
@@ -116,7 +145,6 @@ export default function DashboardSummary({
                     </div>
                 </div>
 
-                {/* show selected department (if any) with clear action */}
                 <div className="flex items-center justify-end mb-2">
                     {selectedDepartment ? (
                         <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">

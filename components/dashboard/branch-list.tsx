@@ -18,6 +18,12 @@ export default function BranchList({
     onBranchClick?: (name: string | null) => void;
     title?: string;
 }) {
+    // filter hanya yang count > 0
+    const visible = Array.isArray(data) ? data.filter(d => Number(d.count) > 0) : [];
+
+    // jika setelah filter tidak ada yang tampil, return null
+    if (visible.length === 0 || total === 0) return null;
+
     const COLORS = ['#10B981', '#60A5FA', '#F59E0B', '#EF4444', '#7C3AED', '#06B6D4', '#F97316', '#0891B2'];
 
     return (
@@ -27,10 +33,8 @@ export default function BranchList({
                 <div className="text-xs text-slate-500">Total MR: <span className="font-medium text-slate-700">{total}</span></div>
             </div>
 
-            <div className="space-y-2 max-h-30 overflow-y-auto">
-                {data.length === 0 ? (
-                    <div className="text-sm text-slate-500">No data</div>
-                ) : data.map((d, idx) => {
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+                {visible.map((d, idx) => {
                     const active = selectedBranch === d.name;
                     const color = COLORS[idx % COLORS.length];
                     return (

@@ -44,9 +44,16 @@ export default function Dashboard() {
     const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
     const [selectedProject, setSelectedProject] = useState<string | null>(null);
 
-    // date range
-    const [startDateLocal, setStartDateLocal] = useState<string | null>(null);
-    const [endDateLocal, setEndDateLocal] = useState<string | null>(null);
+    // two independent date ranges:
+    // MR transaction date range (mrDate)
+    const [mrStart, setMrStart] = useState<string | null>(null);
+    const [mrEnd, setMrEnd] = useState<string | null>(null);
+    const [mrRangeInitialized, setMrRangeInitialized] = useState(false);
+
+    // Required-by date range (reqDate)
+    const [reqStart, setReqStart] = useState<string | null>(null);
+    const [reqEnd, setReqEnd] = useState<string | null>(null);
+    const [reqRangeInitialized, setReqRangeInitialized] = useState(false);
 
     // supplier filter (single)
     const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
@@ -57,7 +64,17 @@ export default function Dashboard() {
     const { data: items = [], isLoading: loadingItems } = useItems();
     const { data: mrs = [], isLoading: loadingMr } = useMaterialRequestData();
 
-    const { minDate: hookMinDate, maxDate: hookMaxDate, isLoading: loadingDateRange } = useMaterialRequestDateRange({
+    // get default ranges already filtered by other interactive filters
+    const { minDate: hookMrMin, maxDate: hookMrMax, isLoading: loadingMrRange } = useMaterialRequestDateRange({
+        selectedStatus,
+        selectedBranch,
+        selectedProject,
+        selectedType,
+        selectedDepartment: selectedDept,
+        date_field: 'transaction_date',
+    });
+
+    const { minDate: hookReqMin, maxDate: hookReqMax, isLoading: loadingReqRange } = useMaterialRequestDateRange({
         selectedStatus,
         selectedBranch,
         selectedProject,
@@ -66,18 +83,36 @@ export default function Dashboard() {
         date_field: 'required_by',
     });
 
+    // initialize MR date local state once (unless user already changed)
     useEffect(() => {
-        if (startDateLocal !== null || endDateLocal !== null) return;
-        if (loadingDateRange) return;
-        if (!hookMinDate && !hookMaxDate) return;
+        if (mrRangeInitialized) return;
+        if (loadingMrRange) return;
+        if (!hookMrMin && !hookMrMax) return;
+        setMrStart((prev) => prev ?? hookMrMin ?? null);
+        setMrEnd((prev) => prev ?? hookMrMax ?? null);
+        setMrRangeInitialized(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loadingMrRange, hookMrMin, hookMrMax, mrRangeInitialized]);
 
-        setStartDateLocal(hookMinDate ?? null);
-        setEndDateLocal(hookMaxDate ?? null);
-    }, [loadingDateRange, hookMinDate, hookMaxDate, startDateLocal, endDateLocal]);
-
+    // initialize Required-by local state once
     useEffect(() => {
-        setStartDateLocal(null);
-        setEndDateLocal(null);
+        if (reqRangeInitialized) return;
+        if (loadingReqRange) return;
+        if (!hookReqMin && !hookReqMax) return;
+        setReqStart((prev) => prev ?? hookReqMin ?? null);
+        setReqEnd((prev) => prev ?? hookReqMax ?? null);
+        setReqRangeInitialized(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loadingReqRange, hookReqMin, hookReqMax, reqRangeInitialized]);
+
+    // whenever main filters change, clear both local ranges so they re-init from hooks
+    useEffect(() => {
+        setMrRangeInitialized(false);
+        setReqRangeInitialized(false);
+        setMrStart(null);
+        setMrEnd(null);
+        setReqStart(null);
+        setReqEnd(null);
     }, [selectedStatus, selectedBranch, selectedProject, selectedType, selectedDept]);
 
     const { data: transactions = [] } = useTransactionData();
@@ -95,13 +130,15 @@ export default function Dashboard() {
         return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     }, [transactions]);
 
-    // project list
+    // project list - pass both ranges: MR date + required-by (hooks should accept optional params)
     const { projects: projectList = [] } = useMaterialRequestProjectList({
         selectedStatus,
         selectedBranch,
         selectedType,
-        start_date: startDateLocal,
-        end_date: endDateLocal,
+        start_date: mrStart,
+        end_date: mrEnd,
+        required_start: reqStart,
+        required_end: reqEnd,
     });
 
     const { data: typeData = [] } = useMaterialRequestTypeSummary({
@@ -109,12 +146,22 @@ export default function Dashboard() {
         selectedBranch,
         selectedProject,
         selectedType,
-        start_date: startDateLocal,
-        end_date: endDateLocal,
+        start_date: mrStart,
+        end_date: mrEnd,
+        required_start: reqStart,
+        required_end: reqEnd,
     });
 
     const { data: branchData = [], total: branchTotal = 0 } =
-        useMaterialRequestBranchSummary({ selectedStatus, selectedProject, selectedType, start_date: startDateLocal, end_date: endDateLocal });
+        useMaterialRequestBranchSummary({
+            selectedStatus,
+            selectedProject,
+            selectedType,
+            start_date: mrStart,
+            end_date: mrEnd,
+            required_start: reqStart,
+            required_end: reqEnd,
+        });
 
     // paging state
     const [page, setPage] = useState(1);
@@ -128,12 +175,33 @@ export default function Dashboard() {
     const [openItemId, setOpenItemId] = useState<string | null>(null);
     const selectedItem = openItemId ? (items as ItemRow[]).find((it) => it.id === openItemId) ?? null : null;
 
+    const [makePoSet, setMakePoSet] = useState<Set<string>>(new Set());
+
+    // toggle handler
+    const handleToggleMakePo = (id: string) => {
+        setMakePoSet((prev) => {
+            const s = new Set(prev);
+            if (s.has(id)) s.delete(id);
+            else s.add(id);
+            return s;
+        });
+    };
+
     const { data: deptData = [], isLoading: deptLoading } =
-        useMaterialRequestDepartmentSummary({ selectedStatus, selectedBranch, selectedProject, selectedType, start_date: startDateLocal, end_date: endDateLocal });
+        useMaterialRequestDepartmentSummary({
+            selectedStatus,
+            selectedBranch,
+            selectedProject,
+            selectedType,
+            start_date: mrStart,
+            end_date: mrEnd,
+            required_start: reqStart,
+            required_end: reqEnd,
+        });
 
     const chartInput = (deptData || []).map((d) => ({ name: d.name, value: d.count }));
 
-    useEffect(() => setPage(1), [searchId, searchName, onlyNeeded, selectedStatus, selectedDept, selectedBranch, selectedProject, selectedType, startDateLocal, endDateLocal, selectedSupplierId, pageSize]);
+    useEffect(() => setPage(1), [searchId, searchName, onlyNeeded, selectedStatus, selectedDept, selectedBranch, selectedProject, selectedType, mrStart, mrEnd, reqStart, reqEnd, selectedSupplierId, pageSize]);
 
     // last purchase per item map
     const lastPurchaseByItem = useMemo(() => {
@@ -159,7 +227,7 @@ export default function Dashboard() {
         return map;
     }, [transactions]);
 
-    const statusesForAgg = selectedStatus ? selectedStatus : ['draft', 'partially ordered'];
+    const statusesForAgg = selectedStatus ? selectedStatus : ['draft', 'partially ordered', 'pending'];
 
     const { filtered: filteredMRs = [] } = useFilteredMaterialRequests({
         selectedStatus: statusesForAgg,
@@ -167,12 +235,14 @@ export default function Dashboard() {
         selectedBranch,
         selectedProject,
         selectedType,
-        start_date: startDateLocal,
-        end_date: endDateLocal,
+        start_date: mrStart,
+        end_date: mrEnd,
+        required_start: reqStart,
+        required_end: reqEnd,
     });
 
     const aggByItem = useMemo(() => {
-        const ALLOWED = new Set(['draft', 'partially ordered']);
+        const ALLOWED = new Set(['draft', 'partially ordered', 'pending']);
         const map = new Map<string, { asked: number; ordered: number; received: number }>();
 
         const add = (code: string, d: { asked?: number; ordered?: number; received?: number }) => {
@@ -208,7 +278,7 @@ export default function Dashboard() {
             return {
                 id: it.id,
                 name: it.name,
-                total_stock: typeof it.total_stock === 'number' ? it.total_stock : 0,
+                total_stock: typeof (it as any).total_stock === 'number' ? (it as any).total_stock : 0,
                 asked: agg.asked,
                 received: agg.received,
                 uom: it.uom ?? '-',
@@ -251,8 +321,10 @@ export default function Dashboard() {
             selectedBranch,
             selectedProject,
             selectedType,
-            start_date: startDateLocal,
-            end_date: endDateLocal,
+            start_date: mrStart,
+            end_date: mrEnd,
+            required_start: reqStart,
+            required_end: reqEnd,
         });
 
     const handleResetAll = () => {
@@ -266,8 +338,10 @@ export default function Dashboard() {
         setOnlyNeeded(true);
         setPage(1);
 
-        setStartDateLocal(null);
-        setEndDateLocal(null);
+        setMrStart(null);
+        setMrEnd(null);
+        setReqStart(null);
+        setReqEnd(null);
         setSelectedSupplierId(null);
 
         queryClient.invalidateQueries({ queryKey: ['material-request', 'list'] });
@@ -275,6 +349,18 @@ export default function Dashboard() {
 
     const tableRightActions = (
         <div className="flex items-center gap-3">
+            <div className="text-sm text-slate-600">Selected: <span className="font-medium ml-1">{makePoSet.size}</span></div>
+            <button
+                onClick={() => {
+                    // placeholder: nanti ganti dengan aksi API
+                    const ids = Array.from(makePoSet);
+                    console.log('Create PO for', ids);
+                }}
+                className="rounded-md bg-sky-600 text-white px-3 py-1 text-sm hover:bg-sky-700"
+            >
+                Create PO
+            </button>
+
             <label className="text-sm text-slate-600">Rows:</label>
             <select
                 value={String(pageSize)}
@@ -293,6 +379,12 @@ export default function Dashboard() {
     return (
         <div className="p-2 space-y-4">
             <DashboardSummary
+                mrStart={mrStart}
+                mrEnd={mrEnd}
+                onMrChange={(s, e) => { setMrStart(s); setMrEnd(e); }}
+                reqStart={reqStart}
+                reqEnd={reqEnd}
+                onReqChange={(s, e) => { setReqStart(s); setReqEnd(e); }}
                 latestDate={latestDate ?? undefined}
                 nearestRequiredBy={nearestRequiredBy ?? undefined}
                 totalMR={totalMR}
@@ -334,17 +426,8 @@ export default function Dashboard() {
                         title="Cabang / Kota"
                     />
 
-                    {!loadingDateRange ? (
-                        <DateRangeInputs
-                            start={startDateLocal}
-                            end={endDateLocal}
-                            min={hookMinDate}
-                            max={hookMaxDate}
-                            onChange={(s, e) => {
-                                setStartDateLocal(s);
-                                setEndDateLocal(e);
-                            }}
-                        />
+                    {!loadingReqRange && !loadingMrRange ? (
+                        <div /> // ranges managed inside DashboardSummary now
                     ) : (
                         <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
                             Loading date range...
@@ -362,7 +445,7 @@ export default function Dashboard() {
                                 setSelectedType((prev) => (prev === name ? null : (name as MRType)));
                             }}
                             title="Tipe MR"
-                            height={412}
+                            height={402}
                         />
                     </div>
                 ) : (
@@ -377,6 +460,57 @@ export default function Dashboard() {
                     columns={[
                         { key: 'id', header: 'Code', width: '120px', className: 'font-mono' },
                         { key: 'name', header: 'Name', width: '260px' },
+                        {
+                            key: 'make_po',
+                            header: 'Make PO',
+                            width: '100px',
+                            className: 'text-center',
+                            render: (r: Row) => {
+                                const checked = makePoSet.has(r.id);
+                                // handler lokal non-bubbling
+                                const toggle = (e: React.SyntheticEvent) => {
+                                    e.stopPropagation(); // cegah naik ke tr
+                                    // klik pada label/input akan memicu onChange di bawah juga,
+                                    // tapi kita juga sediakan toggle manual untuk keamanan.
+                                    setMakePoSet(prev => {
+                                        const s = new Set(prev);
+                                        if (s.has(r.id)) s.delete(r.id);
+                                        else s.add(r.id);
+                                        return s;
+                                    });
+                                };
+
+                                return (
+                                    <div
+                                        // cegah bubbling dari klik elemen wrapper juga
+                                        onClick={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        className="flex items-center justify-center"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            // pastikan semua event yang mungkin memicu bubbling dicegah
+                                            onClick={(e) => { e.stopPropagation(); }}
+                                            onMouseDown={(e) => { e.stopPropagation(); }}
+                                            onChange={(e) => {
+                                                e.stopPropagation();
+                                                // gunakan state update fungsional
+                                                setMakePoSet(prev => {
+                                                    const s = new Set(prev);
+                                                    if (s.has(r.id)) s.delete(r.id);
+                                                    else s.add(r.id);
+                                                    return s;
+                                                });
+                                            }}
+                                            className="h-4 w-4 rounded border-slate-300 text-sky-600"
+                                            aria-label={`Make PO for ${r.id}`}
+                                        />
+                                    </div>
+                                );
+                            },
+                        },
+
                         { key: 'asked', header: 'Qty Asked', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-sky-50 text-sky-700 ring-sky-200">{r.asked.toLocaleString('id-ID')}</Badge> },
                         { key: 'received', header: 'Qty Recv', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{r.received.toLocaleString('id-ID')}</Badge> },
                         { key: 'total_stock', header: 'Stock Total', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-slate-50 text-slate-700 ring-slate-200">{(r.total_stock || 0).toLocaleString('id-ID')}</Badge> },
@@ -414,15 +548,20 @@ export default function Dashboard() {
                     suppliers={supplierList}
                     selectedSupplierId={selectedSupplierId}
                     onSelectSupplier={(id) => setSelectedSupplierId(id)}
+
+                    /* ----- NEW PROPS (toggle checkbox) ----- */
+                    onlyNeeded={onlyNeeded}
+                    onToggleOnlyNeeded={(v) => setOnlyNeeded(v)}
+                    /* ---------------------------------------- */
+
                     onRowClick={(row) => setOpenItemId((row as Row).id)}
                 />
+
             </div>
 
             {openItemId ? <ItemNeedPanel item={selectedItem} onClose={() => setOpenItemId(null)} /> : null}
         </div>
     );
-}
 
-function Badge({ children, cls }: { children: React.ReactNode; cls: string }) {
-    return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${cls}`}>{children}</span>;
+
 }
