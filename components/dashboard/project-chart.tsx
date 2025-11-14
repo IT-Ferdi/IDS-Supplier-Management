@@ -130,7 +130,7 @@ export default function ProjectPie({
                                             background: d.color,
                                         }}
                                     />
-                                    <span className="truncate font-medium">{d.name}</span>
+                                    <span className="truncate font-semibold text-base md:text-lg">{d.name}</span>
                                 </div>
                             </div>
                         ))}

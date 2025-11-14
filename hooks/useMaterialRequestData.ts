@@ -383,11 +383,15 @@ export function useMaterialRequestSummary(params?: {
             return { latestDate: null, nearestRequiredBy: null, totalMR: 0, draftCount: 0, partiallyOrderedCount: 0 };
         }
 
-        let latest: string | null = null;
-        const requiredDates: string[] = [];
+        // new semantics: find earliest (oldest) transaction_date and earliest required_by
+        let oldestTransactionIso: string | null = null;
+        let oldestRequiredByIso: string | null = null;
+        let oldestRequiredByTs: number | null = null;
+
         let total = 0;
         let draft = 0;
         let partial = 0;
+        let pending = 0;
 
         mrs.forEach((mr) => {
             // status filter
@@ -408,7 +412,7 @@ export function useMaterialRequestSummary(params?: {
                 if (mrType !== selectedType) return;
             }
 
-            // date range
+            // date range filter (transaction_date)
             if ((startTime || endTime) && mr.transaction_date) {
                 const t = new Date(mr.transaction_date).getTime();
                 if (startTime && t < startTime) return;
@@ -432,19 +436,40 @@ export function useMaterialRequestSummary(params?: {
             const st = (mr.status ?? '').toString().toLowerCase();
             if (st === 'draft') draft++;
             if (st === 'partially ordered') partial++;
+            if (st === 'pending') pending++;
 
+            // track oldest transaction_date (earliest)
             if (mr.transaction_date) {
-                if (!latest || new Date(mr.transaction_date) > new Date(latest)) latest = mr.transaction_date;
+                const t = new Date(mr.transaction_date);
+                if (!isNaN(t.getTime())) {
+                    if (!oldestTransactionIso || new Date(mr.transaction_date) < new Date(oldestTransactionIso)) {
+                        oldestTransactionIso = mr.transaction_date;
+                    }
+                }
             }
-            if (mr.required_by) requiredDates.push(mr.required_by);
+
+            // track oldest required_by (earliest)
+            if (mr.required_by) {
+                const d = new Date(mr.required_by);
+                if (!isNaN(d.getTime())) {
+                    const ts = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                    if (oldestRequiredByTs === null || ts < oldestRequiredByTs) {
+                        oldestRequiredByTs = ts;
+                        // store original ISO/string (keep the raw value)
+                        oldestRequiredByIso = mr.required_by;
+                    }
+                }
+            }
         });
 
-        const today = new Date();
-        const sortedReq = requiredDates.map(d => ({ raw: d, time: new Date(d).getTime() })).sort((a, b) => a.time - b.time);
-        const future = sortedReq.find(s => s.time >= new Date(today.toDateString()).getTime());
-        const nearest = future ? future.raw : (sortedReq[0]?.raw ?? null);
-
-        return { latestDate: latest, nearestRequiredBy: nearest, totalMR: total, draftCount: draft, partiallyOrderedCount: partial };
+        return {
+            latestDate: oldestTransactionIso,         // now 'oldest MR' (earliest transaction_date)
+            nearestRequiredBy: oldestRequiredByIso,  // now 'oldest required_by'
+            totalMR: total,
+            draftCount: draft,
+            partiallyOrderedCount: partial,
+            pendingCount: pending,
+        };
     }, [mrs, normalizedStatuses, selectedDepartment, selectedBranch, selectedProject, selectedType, startTime, endTime]);
 
     return {
@@ -647,4 +672,100 @@ export function useMaterialRequestTypeSummary(params?: {
 
     return { isLoading, error, ...result };
 }
+
+// hooks/useMaterialRequestData.tsx
+// tambahkan tipe param dan hook baru ini di file yang sama dengan hook lainnya
+
+export type MRDateRangeParams = {
+    selectedStatus?: string | string[] | null;
+    selectedBranch?: string | null;
+    selectedProject?: string | null;
+    selectedType?: MRType | null;
+    selectedDepartment?: string | null;
+    // pilih field yang dipakai untuk range (default required_by)
+    date_field?: 'required_by' | 'transaction_date';
+};
+
+export function useMaterialRequestDateRange(params?: MRDateRangeParams) {
+    const { data: mrs = [], isLoading, error } = useMaterialRequestData();
+    const {
+        selectedStatus,
+        selectedBranch,
+        selectedProject,
+        selectedType,
+        selectedDepartment,
+        date_field = 'required_by',
+    } = params ?? {};
+
+    const normalizedStatuses = useMemo(() => {
+        if (!selectedStatus) return null;
+        return Array.isArray(selectedStatus)
+            ? selectedStatus.map(s => (s ?? '').toString().toLowerCase())
+            : [selectedStatus.toString().toLowerCase()];
+    }, [selectedStatus]);
+
+    const result = useMemo(() => {
+        // default today iso
+        const today = new Date();
+        const isoToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString().slice(0, 10);
+
+        if (!Array.isArray(mrs) || mrs.length === 0) {
+            return { minDate: isoToday, maxDate: isoToday };
+        }
+
+        let minTs: number | null = null;
+        let maxTs: number | null = null;
+
+        for (const mr of mrs) {
+            // status filter
+            if (normalizedStatuses && normalizedStatuses.length > 0) {
+                const st = (mr.status ?? '').toString().toLowerCase();
+                if (!normalizedStatuses.includes(st)) continue;
+            }
+
+            // branch filter
+            if (selectedBranch) {
+                const branch = costCenterToBranch(mr.cost_center);
+                if (branch !== selectedBranch) continue;
+            }
+
+            // type filter
+            if (selectedType) {
+                const mrType = getMrType(mr);
+                if (mrType !== selectedType) continue;
+            }
+
+            // department filter (item-level)
+            if (selectedDepartment) {
+                const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.department ?? '') as string).toLowerCase().includes(selectedDepartment.toLowerCase()));
+                if (!ok) continue;
+            }
+
+            // project filter (item-level)
+            if (selectedProject) {
+                const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.project ?? '') as string).toLowerCase().includes(selectedProject.toLowerCase()));
+                if (!ok) continue;
+            }
+
+            // get the date value from mr using date_field
+            const raw = (mr as any)[date_field];
+            if (!raw) continue;
+            const d = new Date(raw);
+            if (isNaN(d.getTime())) continue;
+            const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+            if (minTs === null || t < minTs) minTs = t;
+            if (maxTs === null || t > maxTs) maxTs = t;
+        }
+
+        const isoMin = minTs ? new Date(minTs).toISOString().slice(0, 10) : isoToday;
+        const isoMax = maxTs ? new Date(maxTs).toISOString().slice(0, 10) : isoToday;
+        return { minDate: isoMin, maxDate: isoMax };
+    }, [mrs, normalizedStatuses, selectedBranch, selectedProject, selectedType, selectedDepartment, date_field]);
+
+    return { minDate: result.minDate, maxDate: result.maxDate, isLoading, error };
+}
+
+
+
 

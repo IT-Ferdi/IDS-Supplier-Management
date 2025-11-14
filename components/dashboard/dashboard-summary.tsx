@@ -8,6 +8,7 @@ type Props = {
     nearestRequiredBy?: string;
     totalMR: number;
     draftCount: number;
+    pendingCount: number;
     partiallyOrderedCount: number;
 
     // interactivity
@@ -27,6 +28,7 @@ export default function DashboardSummary({
     totalMR,
     draftCount,
     partiallyOrderedCount,
+    pendingCount,
     selectedStatus = null,
     onSelectStatus,
     selectedDepartment = null,
@@ -66,12 +68,12 @@ export default function DashboardSummary({
                 <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-slate-600 flex items-center gap-1.5">
                         <CalendarDays className="h-4 w-4 text-sky-600" />
-                        Latest MR Date
+                        Oldest MR Date
                     </h3>
                 </div>
                 <div className="mt-2">
                     <p className="mt-2 text-4xl font-bold text-gray-900 tracking-tight">{formatDate(latestDate)}</p>
-                    <p className="text-xs text-slate-500 mt-1">Tanggal pembuatan MR terbaru</p>
+                    <p className="text-xs text-slate-500 mt-1">Tanggal pembuatan MR terdahulu</p>
                 </div>
             </div>
 
@@ -80,13 +82,13 @@ export default function DashboardSummary({
                 <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-slate-600 flex items-center gap-1.5">
                         <Clock className="h-4 w-4 text-amber-600" />
-                        Nearest Required By
+                        Oldest Required By
                     </h3>
                 </div>
 
                 <div className="mt-2">
                     <p className="mt-2 text-4xl font-bold text-gray-900 tracking-tight">{formatDate(nearestRequiredBy)}</p>
-                    <p className="text-xs text-slate-500 mt-1">Tanggal permintaan terdekat</p>
+                    <p className="text-xs text-slate-500 mt-1">Tanggal permintaan terdahulu</p>
                 </div>
             </div>
 
@@ -147,6 +149,11 @@ export default function DashboardSummary({
                     <div className="flex flex-col items-center text-center">
                         {statusButton('Partially Ordered', 'partially ordered', 'bg-amber-500', 'text-white')}
                         <span className="text-base font-bold text-slate-800 mt-1">{partiallyOrderedCount}</span>
+                    </div>
+
+                    <div className="flex flex-col items-center text-center">
+                        {statusButton('Pending', 'pending', 'bg-red-500', 'text-white')}
+                        <span className="text-base font-bold text-slate-800 mt-1">{pendingCount}</span>
                     </div>
                 </div>
             </div>

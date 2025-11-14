@@ -27,7 +27,7 @@ export default function BranchList({
                 <div className="text-xs text-slate-500">Total MR: <span className="font-medium text-slate-700">{total}</span></div>
             </div>
 
-            <div className="space-y-2 max-h-56 overflow-y-auto">
+            <div className="space-y-2 max-h-30 overflow-y-auto">
                 {data.length === 0 ? (
                     <div className="text-sm text-slate-500">No data</div>
                 ) : data.map((d, idx) => {

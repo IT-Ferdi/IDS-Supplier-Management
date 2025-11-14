@@ -107,6 +107,7 @@ export default function DepartmentChart({
                 <div className="flex-1 overflow-y-auto h-full">
                     <div className="flex items-center justify-between">
                         <h3 className="text-sm font-semibold mb-2 text-slate-700">{title}</h3>
+
                         {selectedStatus ? (
                             <div className="text-xs text-slate-500">
                                 Status: <span className="font-medium ml-1">{selectedStatus}</span>
@@ -118,6 +119,7 @@ export default function DepartmentChart({
                         {chartData.map((d) => {
                             const isSelected = selectedDept === d.name;
                             const faded = selectedDept && !isSelected;
+
                             return (
                                 <button
                                     key={d.name}
@@ -130,16 +132,27 @@ export default function DepartmentChart({
                                             className="shrink-0 inline-block rounded-full"
                                             style={{ width: 12, height: 12, background: d.color }}
                                         />
+
+                                        {/* 👇 Bagian ini yang diperbesar */}
                                         <div className="min-w-0">
-                                            <div className="text-sm font-medium truncate text-slate-800">{d.name}</div>
+                                            <div className="text-base md:text-lg font-semibold truncate text-slate-800">
+                                                {d.name}
+                                            </div>
                                             <div className="text-xs text-slate-500">{d.count} MR</div>
                                         </div>
                                     </div>
 
                                     <div className="flex items-center gap-3">
                                         <div className="text-sm font-semibold text-slate-700">{d.percent}%</div>
-                                        <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                            <div style={{ width: `${d.percent}%`, background: d.color, height: '100%' }} />
+
+                                        <div className="w-30 h-4 bg-slate-100 rounded-full overflow-hidden">
+                                            <div
+                                                style={{
+                                                    width: `${d.percent}%`,
+                                                    background: d.color,
+                                                    height: "100%",
+                                                }}
+                                            />
                                         </div>
                                     </div>
                                 </button>
@@ -147,6 +160,7 @@ export default function DepartmentChart({
                         })}
                     </div>
                 </div>
+
             </div>
         </div>
     );

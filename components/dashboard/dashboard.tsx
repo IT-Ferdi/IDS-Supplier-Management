@@ -1,4 +1,3 @@
-// components/dashboard/dashboard.tsx
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
@@ -12,7 +11,8 @@ import {
     useFilteredMaterialRequests,
     useMaterialRequestBranchSummary,
     useMaterialRequestProjectList,
-    useMaterialRequestTypeSummary
+    useMaterialRequestTypeSummary,
+    useMaterialRequestDateRange,
 } from '@/hooks/useMaterialRequestData';
 import { useTransactionData } from '@/hooks/useTransactionData';
 import type { ItemRow } from '@/types/item';
@@ -21,16 +21,15 @@ import DashboardSummary from '@/components/dashboard/dashboard-summary';
 import ItemNeedPanel from '@/components/ui/item-demand-panel';
 import DepartmentChart from '@/components/dashboard/department-chart';
 import BranchList from '@/components/dashboard/branch-list';
+import DateRangeInputs from '@/components/ui/date-range-inputs';
 
 type Row = {
     id: string;
     name: string;
-    category: string;
-    uom?: string;
+    total_stock: number;
     asked: number;
-    ordered: number;
     received: number;
-    shortage: number;
+    uom?: string | null;
     lastSupplier?: { id?: string; name?: string; date?: string } | null;
 };
 
@@ -39,74 +38,104 @@ type MRType = 'Project' | 'Operational' | 'Stock' | 'Lain-lain';
 export default function Dashboard() {
     const queryClient = useQueryClient();
 
-    // interactive filters (single selection)
+    // interactive filters
     const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
     const [selectedDept, setSelectedDept] = useState<string | null>(null);
     const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
     const [selectedProject, setSelectedProject] = useState<string | null>(null);
 
-    // NEW: selected type filter (Project / Operational / Stock / Lain-lain)
+    // date range
+    const [startDateLocal, setStartDateLocal] = useState<string | null>(null);
+    const [endDateLocal, setEndDateLocal] = useState<string | null>(null);
+
+    // supplier filter (single)
+    const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+
+    // type filter
     const [selectedType, setSelectedType] = useState<MRType | null>(null);
 
     const { data: items = [], isLoading: loadingItems } = useItems();
     const { data: mrs = [], isLoading: loadingMr } = useMaterialRequestData();
-    const { data: transactions = [] } = useTransactionData();
 
-    // project list hook (will be used by select)
-    const { projects: projectList = [] } = useMaterialRequestProjectList({
-        selectedStatus,
-        selectedBranch,
-        selectedType,
-        start_date: null,
-        end_date: null,
-    });
-
-    // type summary hook (gives counts per MR type)
-    const { data: typeData = [], total: typeTotal = 0 } = useMaterialRequestTypeSummary({
+    const { minDate: hookMinDate, maxDate: hookMaxDate, isLoading: loadingDateRange } = useMaterialRequestDateRange({
         selectedStatus,
         selectedBranch,
         selectedProject,
         selectedType,
+        selectedDepartment: selectedDept,
+        date_field: 'required_by',
     });
 
-    const { data: branchData = [], total: branchTotal = 0, isLoading: branchLoading } =
-        useMaterialRequestBranchSummary({ selectedStatus, selectedProject, selectedType, start_date: null, end_date: null });
+    useEffect(() => {
+        if (startDateLocal !== null || endDateLocal !== null) return;
+        if (loadingDateRange) return;
+        if (!hookMinDate && !hookMaxDate) return;
 
+        setStartDateLocal(hookMinDate ?? null);
+        setEndDateLocal(hookMaxDate ?? null);
+    }, [loadingDateRange, hookMinDate, hookMaxDate, startDateLocal, endDateLocal]);
+
+    useEffect(() => {
+        setStartDateLocal(null);
+        setEndDateLocal(null);
+    }, [selectedStatus, selectedBranch, selectedProject, selectedType, selectedDept]);
+
+    const { data: transactions = [] } = useTransactionData();
+
+    // build supplier list from transactions
+    const supplierList = useMemo(() => {
+        const map = new Map<string, string>();
+        (transactions || []).forEach(tx => {
+            const id = (tx.supplier ?? '').toString();
+            const name = (tx.supplier_name ?? '').toString();
+            const key = id || name;
+            if (!key) return;
+            if (!map.has(key)) map.set(key, name || key);
+        });
+        return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+    }, [transactions]);
+
+    // project list
+    const { projects: projectList = [] } = useMaterialRequestProjectList({
+        selectedStatus,
+        selectedBranch,
+        selectedType,
+        start_date: startDateLocal,
+        end_date: endDateLocal,
+    });
+
+    const { data: typeData = [] } = useMaterialRequestTypeSummary({
+        selectedStatus,
+        selectedBranch,
+        selectedProject,
+        selectedType,
+        start_date: startDateLocal,
+        end_date: endDateLocal,
+    });
+
+    const { data: branchData = [], total: branchTotal = 0 } =
+        useMaterialRequestBranchSummary({ selectedStatus, selectedProject, selectedType, start_date: startDateLocal, end_date: endDateLocal });
+
+    // paging state
     const [page, setPage] = useState(1);
-    const pageSize = 4;
+    const [pageSize, setPageSize] = useState<number>(10);
 
     // table filters
     const [searchId, setSearchId] = useState('');
     const [searchName, setSearchName] = useState('');
     const [onlyNeeded, setOnlyNeeded] = useState(true);
 
-    // panel state
     const [openItemId, setOpenItemId] = useState<string | null>(null);
     const selectedItem = openItemId ? (items as ItemRow[]).find((it) => it.id === openItemId) ?? null : null;
 
-    // department summary for chart (reactive to all filters incl. selectedType)
-    const {
-        data: deptData = [],
-        total: deptTotal = 0,
-        isLoading: deptLoading,
-    } = useMaterialRequestDepartmentSummary({
-        selectedStatus,
-        selectedBranch,
-        selectedProject,
-        selectedType,
-        start_date: null,
-        end_date: null,
-    });
+    const { data: deptData = [], isLoading: deptLoading } =
+        useMaterialRequestDepartmentSummary({ selectedStatus, selectedBranch, selectedProject, selectedType, start_date: startDateLocal, end_date: endDateLocal });
 
-    // map to chart input: {name, value}
     const chartInput = (deptData || []).map((d) => ({ name: d.name, value: d.count }));
 
-    // reset page when filters change
-    useEffect(() => {
-        setPage(1);
-    }, [searchId, searchName, onlyNeeded, selectedStatus, selectedDept, selectedBranch, selectedProject, selectedType]);
+    useEffect(() => setPage(1), [searchId, searchName, onlyNeeded, selectedStatus, selectedDept, selectedBranch, selectedProject, selectedType, startDateLocal, endDateLocal, selectedSupplierId, pageSize]);
 
-    // last purchase per item (from transactions)
+    // last purchase per item map
     const lastPurchaseByItem = useMemo(() => {
         const map = new Map<string, { supplier_id?: string; supplier_name?: string; date?: string }>();
         (transactions || []).forEach((tx) => {
@@ -130,9 +159,6 @@ export default function Dashboard() {
         return map;
     }, [transactions]);
 
-    // ----------------------------
-    // Use filtered MRs for table aggregation and other derived data.
-    // include selectedType so filteredMRs respects type filter too.
     const statusesForAgg = selectedStatus ? selectedStatus : ['draft', 'partially ordered'];
 
     const { filtered: filteredMRs = [] } = useFilteredMaterialRequests({
@@ -141,10 +167,10 @@ export default function Dashboard() {
         selectedBranch,
         selectedProject,
         selectedType,
+        start_date: startDateLocal,
+        end_date: endDateLocal,
     });
-    // ----------------------------
 
-    // aggregate MR per item using filteredMRs
     const aggByItem = useMemo(() => {
         const ALLOWED = new Set(['draft', 'partially ordered']);
         const map = new Map<string, { asked: number; ordered: number; received: number }>();
@@ -175,38 +201,41 @@ export default function Dashboard() {
         return map;
     }, [filteredMRs]);
 
-    // build table rows
     const rows: Row[] = useMemo(() => {
         return (items as ItemRow[]).map((it) => {
             const agg = aggByItem.get(it.id) ?? { asked: 0, ordered: 0, received: 0 };
-            const shortage = agg.ordered === 0 && agg.received === 0 ? Math.max(0, agg.asked) : Math.max(0, agg.ordered - agg.received);
             const last = lastPurchaseByItem.get(it.id) ?? null;
             return {
                 id: it.id,
                 name: it.name,
-                category: it.category ?? '-',
-                uom: it.uom ?? '-',
+                total_stock: typeof it.total_stock === 'number' ? it.total_stock : 0,
                 asked: agg.asked,
-                ordered: agg.ordered,
                 received: agg.received,
-                shortage,
+                uom: it.uom ?? '-',
                 lastSupplier: last ? { id: last.supplier_id, name: last.supplier_name, date: last.date } : null,
             };
         });
     }, [items, aggByItem, lastPurchaseByItem]);
 
-    // client-side table filters
     const filtered = useMemo(() => {
         const idQ = searchId.trim().toLowerCase();
         const nameQ = searchName.trim().toLowerCase();
         let base = rows;
         if (idQ) base = base.filter((r) => r.id.toLowerCase().includes(idQ));
         if (nameQ) base = base.filter((r) => r.name.toLowerCase().includes(nameQ));
-        if (onlyNeeded) base = base.filter((r) => r.shortage > 0);
-        return base;
-    }, [rows, searchId, searchName, onlyNeeded]);
+        if (onlyNeeded) base = base.filter((r) => (r.asked - r.received) > 0);
 
-    // paging
+        if (selectedSupplierId) {
+            base = base.filter((r) => {
+                const sid = r.lastSupplier?.id ?? r.lastSupplier?.name ?? '';
+                if (!sid) return false;
+                return sid.toString() === selectedSupplierId.toString();
+            });
+        }
+
+        return base;
+    }, [rows, searchId, searchName, onlyNeeded, selectedSupplierId]);
+
     const totalRows = filtered.length;
     const paged = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
     const loading = loadingItems || loadingMr;
@@ -215,25 +244,17 @@ export default function Dashboard() {
         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${cls}`}>{children}</span>
     );
 
-    // summary from hook (reactive to all filters)
-    const {
-        latestDate,
-        nearestRequiredBy,
-        totalMR,
-        draftCount,
-        partiallyOrderedCount,
-        isLoading: summaryLoading,
-    } = useMaterialRequestSummary({
-        selectedStatus,
-        selectedDepartment: selectedDept,
-        selectedBranch,
-        selectedProject,
-        selectedType,
-        start_date: null,
-        end_date: null,
-    });
+    const { latestDate, nearestRequiredBy, totalMR, draftCount, partiallyOrderedCount, pendingCount } =
+        useMaterialRequestSummary({
+            selectedStatus,
+            selectedDepartment: selectedDept,
+            selectedBranch,
+            selectedProject,
+            selectedType,
+            start_date: startDateLocal,
+            end_date: endDateLocal,
+        });
 
-    // reset handler (clears all filters and refetch)
     const handleResetAll = () => {
         setSelectedStatus(null);
         setSelectedDept(null);
@@ -245,9 +266,29 @@ export default function Dashboard() {
         setOnlyNeeded(true);
         setPage(1);
 
-        // ask react-query to refetch material requests
+        setStartDateLocal(null);
+        setEndDateLocal(null);
+        setSelectedSupplierId(null);
+
         queryClient.invalidateQueries({ queryKey: ['material-request', 'list'] });
     };
+
+    const tableRightActions = (
+        <div className="flex items-center gap-3">
+            <label className="text-sm text-slate-600">Rows:</label>
+            <select
+                value={String(pageSize)}
+                onChange={(e) => {
+                    const p = Number(e.target.value) || 10;
+                    setPageSize(p);
+                }}
+                className="rounded-md border px-2 py-1 text-sm bg-white"
+            >
+                <option value="10">10</option>
+                <option value="30">30</option>
+            </select>
+        </div>
+    );
 
     return (
         <div className="p-2 space-y-4">
@@ -257,6 +298,7 @@ export default function Dashboard() {
                 totalMR={totalMR}
                 draftCount={draftCount}
                 partiallyOrderedCount={partiallyOrderedCount}
+                pendingCount={pendingCount ?? 0}
                 selectedStatus={selectedStatus}
                 onSelectStatus={(st) => {
                     setSelectedStatus((prev) => (prev === st ? null : st));
@@ -270,7 +312,6 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                 <div className="md:col-span-1 space-y-3">
-                    {/* Project select (restored) */}
                     <div className="rounded-xl border border-slate-200 bg-white p-3">
                         <label className="text-sm text-slate-600 mb-2 block">Project</label>
                         <select
@@ -292,6 +333,23 @@ export default function Dashboard() {
                         onBranchClick={(b) => setSelectedBranch((prev) => (prev === b ? null : b))}
                         title="Cabang / Kota"
                     />
+
+                    {!loadingDateRange ? (
+                        <DateRangeInputs
+                            start={startDateLocal}
+                            end={endDateLocal}
+                            min={hookMinDate}
+                            max={hookMaxDate}
+                            onChange={(s, e) => {
+                                setStartDateLocal(s);
+                                setEndDateLocal(e);
+                            }}
+                        />
+                    ) : (
+                        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+                            Loading date range...
+                        </div>
+                    )}
                 </div>
 
                 {!loading && !deptLoading ? (
@@ -301,11 +359,10 @@ export default function Dashboard() {
                             selectedStatus={selectedStatus}
                             selectedDept={selectedDept}
                             onDeptClick={(name) => {
-                                // name corresponds to type (Project / Operational / Stock / Lain-lain)
                                 setSelectedType((prev) => (prev === name ? null : (name as MRType)));
                             }}
                             title="Tipe MR"
-                            height={387}
+                            height={410}
                         />
                     </div>
                 ) : (
@@ -320,44 +377,14 @@ export default function Dashboard() {
                     columns={[
                         { key: 'id', header: 'Code', width: '120px', className: 'font-mono' },
                         { key: 'name', header: 'Name', width: '260px' },
-                        { key: 'category', header: 'Category', width: '160px' },
-                        {
-                            key: 'asked',
-                            header: 'Qty Asked',
-                            width: '100px',
-                            className: 'text-right',
-                            render: (r) => <Badge cls="bg-sky-50 text-sky-700 ring-sky-200">{r.asked.toLocaleString('id-ID')}</Badge>,
-                        },
-                        {
-                            key: 'ordered',
-                            header: 'Qty Ordered',
-                            width: '100px',
-                            className: 'text-right',
-                            render: (r) => <Badge cls="bg-amber-50 text-amber-700 ring-amber-200">{r.ordered.toLocaleString('id-ID')}</Badge>,
-                        },
-                        {
-                            key: 'received',
-                            header: 'Qty Received',
-                            width: '100px',
-                            className: 'text-right',
-                            render: (r) => <Badge cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{r.received.toLocaleString('id-ID')}</Badge>,
-                        },
-                        {
-                            key: 'shortage',
-                            header: 'Needed',
-                            width: '100px',
-                            className: 'text-right',
-                            render: (r) => (
-                                <Badge cls={r.shortage > 0 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-600 ring-slate-200'}>
-                                    {r.shortage.toLocaleString('id-ID')}
-                                </Badge>
-                            ),
-                        },
+                        { key: 'asked', header: 'Qty Asked', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-sky-50 text-sky-700 ring-sky-200">{r.asked.toLocaleString('id-ID')}</Badge> },
+                        { key: 'received', header: 'Qty Recv', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{r.received.toLocaleString('id-ID')}</Badge> },
+                        { key: 'total_stock', header: 'Stock Total', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-slate-50 text-slate-700 ring-slate-200">{(r.total_stock || 0).toLocaleString('id-ID')}</Badge> },
                         { key: 'uom', header: 'UOM', width: '80px', className: 'text-center' },
                         {
                             key: 'lastSupplier',
-                            header: 'Last Purchased From',
-                            width: '220px',
+                            header: 'Last Purchase',
+                            width: '100px',
                             render: (r) => {
                                 const s = r.lastSupplier;
                                 if (!s) return <span className="text-slate-500">-</span>;
@@ -378,21 +405,15 @@ export default function Dashboard() {
                     pageSize={pageSize}
                     total={totalRows}
                     onPageChange={setPage}
+                    emptyText="No items"
                     searchId={searchId}
                     searchName={searchName}
                     onSearchIdChange={setSearchId}
                     onSearchNameChange={setSearchName}
-                    rightActions={
-                        <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                            <input
-                                type="checkbox"
-                                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-2 focus:ring-sky-300"
-                                checked={onlyNeeded}
-                                onChange={(e) => setOnlyNeeded(e.target.checked)}
-                            />
-                            Only Needed
-                        </label>
-                    }
+                    rightActions={tableRightActions}
+                    suppliers={supplierList}
+                    selectedSupplierId={selectedSupplierId}
+                    onSelectSupplier={(id) => setSelectedSupplierId(id)}
                     onRowClick={(row) => setOpenItemId((row as Row).id)}
                 />
             </div>
@@ -400,4 +421,8 @@ export default function Dashboard() {
             {openItemId ? <ItemNeedPanel item={selectedItem} onClose={() => setOpenItemId(null)} /> : null}
         </div>
     );
+}
+
+function Badge({ children, cls }: { children: React.ReactNode; cls: string }) {
+    return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${cls}`}>{children}</span>;
 }

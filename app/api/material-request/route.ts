@@ -9,7 +9,7 @@ export async function GET(_request: Request) {
 
         // filter langsung di Mongo
         const materials = await coll
-            .find({ status: { $in: ['Draft', 'Partially Ordered', 'Pending'] } })
+            .find({ status: { $in: ['Draft', 'Partially Ordered', 'Pending', 'Overdue'] } })
             .toArray();
 
         return NextResponse.json(materials);

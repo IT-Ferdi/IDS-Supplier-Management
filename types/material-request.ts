@@ -11,12 +11,15 @@ export interface MaterialRequestItem {
     department: string;
     ordered_qty: number; 
     received_qty: number;
+    po_detail: string;
+    qty_total_po: number;
+    warehouse: string;
 }
 
 export interface MaterialRequest {
     _id: string;
     name: string;
-    transaction_date: string; // format YYYY-MM-DD
+    transaction_date: string;
     purpose: string;
     status: string;
     required_by: string;
