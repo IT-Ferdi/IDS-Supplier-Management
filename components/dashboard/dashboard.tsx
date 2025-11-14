@@ -362,7 +362,7 @@ export default function Dashboard() {
                                 setSelectedType((prev) => (prev === name ? null : (name as MRType)));
                             }}
                             title="Tipe MR"
-                            height={410}
+                            height={412}
                         />
                     </div>
                 ) : (

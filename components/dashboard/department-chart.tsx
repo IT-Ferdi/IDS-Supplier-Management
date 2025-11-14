@@ -8,13 +8,23 @@ type InputDatum = { name: string; value: number };
 type ChartDatum = { name: string; count: number; color: string; percent: number };
 
 const DEFAULT_COLORS = [
-    '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#f97316', '#ec4899',
-    '#60a5fa', '#34d399', '#a78bfa', '#fbbf24'
+    '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444',
+    '#06b6d4', '#f97316', '#ec4899', '#60a5fa', '#34d399',
+    '#a78bfa', '#fbbf24'
 ];
+
+// simple deterministic hash for strings -> number
+function hashString(str: string) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) {
+        h = (h * 31 + str.charCodeAt(i)) >>> 0;
+    }
+    return h;
+}
 
 export default function DepartmentChart({
     data,
-    selectedStatus = null, // optional; dapat dipakai untuk info/label UI
+    selectedStatus = null,
     selectedDept = null,
     onDeptClick,
     title = 'Material Request Types',
@@ -27,25 +37,37 @@ export default function DepartmentChart({
     title?: string;
     height?: number;
 }) {
-    const total = useMemo(() => data.reduce((s, d) => s + (d.value || 0), 0), [data]);
+    const total = useMemo(() => (Array.isArray(data) ? data.reduce((s, d) => s + (d.value || 0), 0) : 0), [data]);
+
+    // build deterministic color map from names present in data
+    const colorMap = useMemo(() => {
+        const m = new Map<string, string>();
+        if (!Array.isArray(data)) return m;
+        for (const d of data) {
+            const name = (d.name ?? 'Unassigned').toString();
+            if (m.has(name)) continue;
+            const idx = hashString(name) % DEFAULT_COLORS.length;
+            m.set(name, DEFAULT_COLORS[idx]);
+        }
+        return m;
+    }, [data]);
 
     const chartData: ChartDatum[] = useMemo(() => {
         if (!Array.isArray(data)) return [];
-        // sort descending, take top N if mau (tidak membatasi di sini)
         const arr = data
-            .map((d, i) => ({
+            .map((d) => ({
                 name: d.name || 'Unassigned',
                 count: Number(d.value || 0),
             }))
             .sort((a, b) => b.count - a.count);
 
-        return arr.map((d, i) => ({
+        return arr.map((d) => ({
             name: d.name,
             count: d.count,
-            color: DEFAULT_COLORS[i % DEFAULT_COLORS.length],
+            color: colorMap.get(d.name) ?? DEFAULT_COLORS[0],
             percent: total > 0 ? Math.round((d.count / total) * 100) : 0,
         }));
-    }, [data, total]);
+    }, [data, total, colorMap]);
 
     if (!chartData || chartData.length === 0) {
         return (
@@ -84,12 +106,12 @@ export default function DepartmentChart({
                                 outerRadius="90%"
                                 onClick={(d) => handleClick(d)}
                             >
-                                {chartData.map((entry, idx) => {
+                                {chartData.map((entry) => {
                                     const faded = selectedDept && selectedDept !== entry.name;
                                     const opacity = faded ? 0.32 : 1;
                                     return (
                                         <Cell
-                                            key={`cell-${idx}`}
+                                            key={`cell-${entry.name}`}
                                             fill={entry.color}
                                             stroke={entry.color}
                                             strokeWidth={selectedDept === entry.name ? 2 : 0}
@@ -133,7 +155,6 @@ export default function DepartmentChart({
                                             style={{ width: 12, height: 12, background: d.color }}
                                         />
 
-                                        {/* 👇 Bagian ini yang diperbesar */}
                                         <div className="min-w-0">
                                             <div className="text-base md:text-lg font-semibold truncate text-slate-800">
                                                 {d.name}
@@ -150,7 +171,7 @@ export default function DepartmentChart({
                                                 style={{
                                                     width: `${d.percent}%`,
                                                     background: d.color,
-                                                    height: "100%",
+                                                    height: '100%',
                                                 }}
                                             />
                                         </div>
@@ -160,9 +181,7 @@ export default function DepartmentChart({
                         })}
                     </div>
                 </div>
-
             </div>
         </div>
     );
-
 }
