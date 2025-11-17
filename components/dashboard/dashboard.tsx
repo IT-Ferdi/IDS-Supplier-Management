@@ -22,6 +22,7 @@ import ItemNeedPanel from '@/components/ui/item-demand-panel';
 import DepartmentChart from '@/components/dashboard/department-chart';
 import BranchList from '@/components/dashboard/branch-list';
 import DateRangeInputs from '@/components/ui/date-range-inputs';
+import { useMakePo } from '@/hooks/useMaterialRequestData';
 
 type Row = {
     id: string;
@@ -37,6 +38,7 @@ type MRType = 'Project' | 'Operational' | 'Stock' | 'Lain-lain';
 
 export default function Dashboard() {
     const queryClient = useQueryClient();
+    const makePoMutation = useMakePo();
 
     // interactive filters
     const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
@@ -271,6 +273,22 @@ export default function Dashboard() {
         return map;
     }, [filteredMRs]);
 
+    const isPoByItem = useMemo(() => {
+        const map = new Map<string, boolean>();
+
+        (filteredMRs as MaterialRequest[]).forEach((mr) => {
+            (mr.items ?? []).forEach((it: MaterialRequestItem) => {
+                const code = it.item_code ?? '';
+                if (!code) return;
+                if (it.is_po === true) {
+                    map.set(code, true);
+                }
+            });
+        });
+
+        return map;
+    }, [filteredMRs]);
+
     const rows: Row[] = useMemo(() => {
         return (items as ItemRow[]).map((it) => {
             const agg = aggByItem.get(it.id) ?? { asked: 0, ordered: 0, received: 0 };
@@ -283,9 +301,10 @@ export default function Dashboard() {
                 received: agg.received,
                 uom: it.uom ?? '-',
                 lastSupplier: last ? { id: last.supplier_id, name: last.supplier_name, date: last.date } : null,
+                isPo: isPoByItem.get(it.id) === true,
             };
         });
-    }, [items, aggByItem, lastPurchaseByItem]);
+    }, [items, aggByItem, lastPurchaseByItem, isPoByItem]);
 
     const filtered = useMemo(() => {
         const idQ = searchId.trim().toLowerCase();
@@ -351,15 +370,27 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
             <div className="text-sm text-slate-600">Selected: <span className="font-medium ml-1">{makePoSet.size}</span></div>
             <button
-                onClick={() => {
-                    // placeholder: nanti ganti dengan aksi API
-                    const ids = Array.from(makePoSet);
-                    console.log('Create PO for', ids);
+                onClick={async () => {
+                    const itemCodes = Array.from(makePoSet);
+                    if (itemCodes.length === 0) return;
+
+                    try {
+                        await makePoMutation.mutateAsync(itemCodes);
+
+                        // clear setelah berhasil
+                        setMakePoSet(new Set());
+                        console.log("PO updated:", itemCodes);
+
+                    } catch (err) {
+                        console.error("Make PO error:", err);
+                    }
                 }}
-                className="rounded-md bg-sky-600 text-white px-3 py-1 text-sm hover:bg-sky-700"
+                disabled={makePoMutation.isPending}
+                className="rounded-md bg-sky-600 text-white px-3 py-1 text-sm hover:bg-sky-700 disabled:opacity-60"
             >
-                Create PO
+                {makePoMutation.isPending ? "Processing..." : "Create PO"}
             </button>
+
 
             <label className="text-sm text-slate-600">Rows:</label>
             <select
@@ -466,23 +497,11 @@ export default function Dashboard() {
                             width: '100px',
                             className: 'text-center',
                             render: (r: Row) => {
-                                const checked = makePoSet.has(r.id);
-                                // handler lokal non-bubbling
-                                const toggle = (e: React.SyntheticEvent) => {
-                                    e.stopPropagation(); // cegah naik ke tr
-                                    // klik pada label/input akan memicu onChange di bawah juga,
-                                    // tapi kita juga sediakan toggle manual untuk keamanan.
-                                    setMakePoSet(prev => {
-                                        const s = new Set(prev);
-                                        if (s.has(r.id)) s.delete(r.id);
-                                        else s.add(r.id);
-                                        return s;
-                                    });
-                                };
+                                const alreadyPo = (r as any).isPo === true;
+                                const checked = alreadyPo ? true : makePoSet.has(r.id);
 
                                 return (
                                     <div
-                                        // cegah bubbling dari klik elemen wrapper juga
                                         onClick={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => e.stopPropagation()}
                                         className="flex items-center justify-center"
@@ -490,12 +509,12 @@ export default function Dashboard() {
                                         <input
                                             type="checkbox"
                                             checked={checked}
-                                            // pastikan semua event yang mungkin memicu bubbling dicegah
-                                            onClick={(e) => { e.stopPropagation(); }}
-                                            onMouseDown={(e) => { e.stopPropagation(); }}
+                                            disabled={alreadyPo}            // <-- NEW: lock checkbox
+                                            onClick={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => e.stopPropagation()}
                                             onChange={(e) => {
                                                 e.stopPropagation();
-                                                // gunakan state update fungsional
+                                                if (alreadyPo) return;       // safety
                                                 setMakePoSet(prev => {
                                                     const s = new Set(prev);
                                                     if (s.has(r.id)) s.delete(r.id);
@@ -503,17 +522,18 @@ export default function Dashboard() {
                                                     return s;
                                                 });
                                             }}
-                                            className="h-4 w-4 rounded border-slate-300 text-sky-600"
+                                            className={`h-5 w-5 rounded border-slate-300 
+                    ${alreadyPo ? 'text-green-500 opacity-60 cursor-not-allowed' : 'text-sky-600'}`}
                                             aria-label={`Make PO for ${r.id}`}
                                         />
                                     </div>
                                 );
                             },
+
                         },
 
                         { key: 'asked', header: 'Qty Asked', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-sky-50 text-sky-700 ring-sky-200">{r.asked.toLocaleString('id-ID')}</Badge> },
-                        { key: 'received', header: 'Qty Recv', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{r.received.toLocaleString('id-ID')}</Badge> },
-                        { key: 'total_stock', header: 'Stock Total', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-slate-50 text-slate-700 ring-slate-200">{(r.total_stock || 0).toLocaleString('id-ID')}</Badge> },
+                        { key: 'total_stock', header: 'Stock Total', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{(r.total_stock || 0).toLocaleString('id-ID')}</Badge> },
                         { key: 'uom', header: 'UOM', width: '80px', className: 'text-center' },
                         {
                             key: 'lastSupplier',
@@ -565,3 +585,5 @@ export default function Dashboard() {
 
 
 }
+
+

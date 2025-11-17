@@ -9,11 +9,12 @@ export interface MaterialRequestItem {
     project: string;
     cost_center: string;
     department: string;
-    ordered_qty: number; 
+    ordered_qty: number;
     received_qty: number;
     po_detail: string;
     qty_total_po: number;
     warehouse: string;
+    is_po?: boolean;
 }
 
 export interface MaterialRequest {

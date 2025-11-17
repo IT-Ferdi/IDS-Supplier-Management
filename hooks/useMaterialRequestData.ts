@@ -3,6 +3,7 @@
 
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { MaterialRequest, MaterialRequestItem } from '@/types/material-request';
 
 async function fetchMaterialRequests(): Promise<MaterialRequest[]> {
@@ -785,4 +786,42 @@ export function useMaterialRequestDateRange(params?: MRDateRangeParams) {
     }, [mrs, normalizedStatuses, selectedBranch, selectedProject, selectedType, selectedDepartment, date_field]);
 
     return { minDate: result.minDate, maxDate: result.maxDate, isLoading, error };
+}
+
+async function apiMakePo(itemCodes: string[]) {
+    const res = await fetch('/api/material-request/make-po', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_codes: itemCodes }),
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Make PO failed: ${res.status} ${text}`);
+    }
+    return res.json();
+}
+
+export function useMakePo() {
+    const qc = useQueryClient();
+
+    return useMutation({
+        mutationFn: (codes: string[]) => apiMakePo(codes),
+        onMutate: async (codes: string[]) => {
+            // optional snapshot for rollback
+            await qc.cancelQueries({ queryKey: ['material-request', 'list'] });
+            const snapshot = qc.getQueryData<MaterialRequest[]>(['material-request', 'list']);
+            return { snapshot };
+        },
+        onError: (_err, _vars, context: any) => {
+            if (context?.snapshot) {
+                qc.setQueryData(['material-request', 'list'], context.snapshot);
+            }
+        },
+        onSettled: () => {
+            // refetch to ensure all derived hooks recompute
+            qc.invalidateQueries({ queryKey: ['material-request', 'list'] });
+            qc.invalidateQueries({ queryKey: ['material-request', 'summary'] });
+            qc.invalidateQueries({ queryKey: ['material-request', 'dept-summary'] });
+        },
+    });
 }
