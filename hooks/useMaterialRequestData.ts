@@ -6,6 +6,20 @@ import { useQuery } from '@tanstack/react-query';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { MaterialRequest, MaterialRequestItem } from '@/types/material-request';
 
+type PoMeta = { po_name?: string; supplier?: string; transaction_date?: string };
+
+type MakePoPayload = {
+    item_codes: string[];
+    po_meta?: {
+        po_name?: string;
+        supplier?: string;
+        transaction_date?: string;
+        qty?: number;
+        uom?: string;
+        [k: string]: any;
+    };
+};
+
 async function fetchMaterialRequests(): Promise<MaterialRequest[]> {
     const res = await fetch('/api/material-request', { cache: 'no-store' });
     if (!res.ok) throw new Error(`Failed to fetch material requests (${res.status})`);
@@ -788,11 +802,11 @@ export function useMaterialRequestDateRange(params?: MRDateRangeParams) {
     return { minDate: result.minDate, maxDate: result.maxDate, isLoading, error };
 }
 
-async function apiMakePo(itemCodes: string[]) {
+async function apiMakePo(payload: MakePoPayload) {
     const res = await fetch('/api/material-request/make-po', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_codes: itemCodes }),
+        body: JSON.stringify(payload),
     });
     if (!res.ok) {
         const text = await res.text();
@@ -802,26 +816,29 @@ async function apiMakePo(itemCodes: string[]) {
 }
 
 export function useMakePo() {
-    const qc = useQueryClient();
+    const mutation = useMutation({
+        mutationFn: async (payload: MakePoPayload) => {
+            const res = await fetch('/api/material-request/make-po', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
 
-    return useMutation({
-        mutationFn: (codes: string[]) => apiMakePo(codes),
-        onMutate: async (codes: string[]) => {
-            // optional snapshot for rollback
-            await qc.cancelQueries({ queryKey: ['material-request', 'list'] });
-            const snapshot = qc.getQueryData<MaterialRequest[]>(['material-request', 'list']);
-            return { snapshot };
-        },
-        onError: (_err, _vars, context: any) => {
-            if (context?.snapshot) {
-                qc.setQueryData(['material-request', 'list'], context.snapshot);
+            if (!res.ok) {
+                const text = await res.text().catch(() => null);
+                throw new Error(text || `Make PO failed (${res.status})`);
             }
+
+            return res.json();
         },
-        onSettled: () => {
-            // refetch to ensure all derived hooks recompute
-            qc.invalidateQueries({ queryKey: ['material-request', 'list'] });
-            qc.invalidateQueries({ queryKey: ['material-request', 'summary'] });
-            qc.invalidateQueries({ queryKey: ['material-request', 'dept-summary'] });
+
+        onError: (err) => {
+            console.error('useMakePo error:', err);
         },
+
+
     });
+
+    return mutation;
 }
+

@@ -29,8 +29,7 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
             cost_center?: string;
             department?: string;
             qty: number;
-            ordered_qty: number;
-            received_qty: number;
+            ordered: number; // use qty_total_po (fallback ordered_qty)
         };
 
         const rows: Row[] = [];
@@ -44,11 +43,11 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                 if ((it.item_code ?? '').toLowerCase() !== item.id.toLowerCase()) return;
 
                 const qty = Number(it.qty ?? 0);
-                const ordered_qty = Number(it.ordered_qty ?? 0);
-                const received_qty = Number(it.received_qty ?? 0);
+                // prefer qty_total_po as accumulated PO qty, fallback to ordered_qty
+                const ordered = Number(it.qty_total_po ?? it.ordered_qty ?? 0);
 
                 // skip baris yang sudah tuntas (asked <= ordered)
-                if (qty <= ordered_qty) return;
+                if (qty <= ordered) return;
 
                 rows.push({
                     mrId: mr.name ?? '',
@@ -58,27 +57,22 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                     cost_center: it.cost_center ?? '',
                     department: it.department ?? '',
                     qty,
-                    ordered_qty,
-                    received_qty,
+                    ordered,
                 });
             });
         });
 
-        // Jika tidak ingin menampilkan warehouse qty 0 di panel warehouse nanti,
-        // lakukan filter terpisah saat membangun daftar warehouse (di bagian warehouse rendering).
-
         // agregasi unik + total (hanya dari rows yang belum tuntas)
         const agg = <T extends string>(pick: (r: Row) => T | undefined) => {
-            const map = new Map<string, { count: number; asked: number; ordered: number; received: number }>();
+            const map = new Map<string, { count: number; asked: number; ordered: number }>();
             rows.forEach((r) => {
                 const key = (pick(r) || '').trim();
                 if (!key) return;
-                const cur = map.get(key) ?? { count: 0, asked: 0, ordered: 0, received: 0 };
+                const cur = map.get(key) ?? { count: 0, asked: 0, ordered: 0 };
                 map.set(key, {
                     count: cur.count + 1,
                     asked: cur.asked + r.qty,
-                    ordered: cur.ordered + r.ordered_qty,
-                    received: cur.received + r.received_qty,
+                    ordered: cur.ordered + r.ordered,
                 });
             });
             return Array.from(map.entries()).map(([name, v]) => ({ name, ...v }));
@@ -89,22 +83,20 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
         const departments = agg((r) => r.department);
 
         // daftar MR unik (hanya MR dengan sisa > 0)
-        const mrMap = new Map<string, { date?: string; status: string; asked: number; ordered: number; received: number }>();
+        const mrMap = new Map<string, { date?: string; status: string; asked: number; ordered: number }>();
         rows.forEach((r) => {
-            const cur = mrMap.get(r.mrId) ?? { date: r.mrDate, status: r.mrStatus, asked: 0, ordered: 0, received: 0 };
+            const cur = mrMap.get(r.mrId) ?? { date: r.mrDate, status: r.mrStatus, asked: 0, ordered: 0 };
             mrMap.set(r.mrId, {
                 date: cur.date || r.mrDate,
                 status: r.mrStatus,
                 asked: cur.asked + r.qty,
-                ordered: cur.ordered + r.ordered_qty,
-                received: cur.received + r.received_qty,
+                ordered: cur.ordered + r.ordered,
             });
         });
         const mrIds = Array.from(mrMap.entries()).map(([id, v]) => ({ id, ...v }));
 
         return { mrRows: rows, projects, costCenters, departments, mrIds };
     }, [mrs, item]);
-
 
     // Warehouse stock list: ambil dari `item.stock_warehouse` jika tersedia.
     // Filter qty > 0 dan urutkan desc.
@@ -279,16 +271,13 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                                                             </div>
                                                         </div>
 
-                                                        {/* Kanan: angka Asked, Ordered, Recv */}
+                                                        {/* Kanan: angka Asked, Ordered */}
                                                         <div className="flex flex-col items-end gap-1 text-xs text-slate-700">
                                                             <Badge className="bg-sky-50 text-sky-700 ring-sky-200 text-[11px] px-2 py-0.5">
                                                                 Asked {m.asked.toLocaleString('id-ID')}
                                                             </Badge>
                                                             <Badge className="bg-amber-50 text-amber-700 ring-amber-200 text-[11px] px-2 py-0.5">
                                                                 Ordered {m.ordered.toLocaleString('id-ID')}
-                                                            </Badge>
-                                                            <Badge className="bg-emerald-50 text-emerald-700 ring-emerald-200 text-[11px] px-2 py-0.5">
-                                                                Recv {m.received.toLocaleString('id-ID')}
                                                             </Badge>
                                                         </div>
                                                     </div>
@@ -323,9 +312,6 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                                                         </span>
                                                         <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-amber-200">
                                                             Ordered {p.ordered.toLocaleString('id-ID')}
-                                                        </span>
-                                                        <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-emerald-200">
-                                                            Recv {p.received.toLocaleString('id-ID')}
                                                         </span>
                                                     </div>
 
@@ -364,9 +350,6 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                                                         <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-amber-200">
                                                             Ordered {c.ordered.toLocaleString('id-ID')}
                                                         </span>
-                                                        <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-emerald-200">
-                                                            Recv {c.received.toLocaleString('id-ID')}
-                                                        </span>
                                                     </div>
                                                 </div>
                                             ))}
@@ -404,9 +387,6 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                                                         </span>
                                                         <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-amber-200">
                                                             Ordered {d.ordered.toLocaleString('id-ID')}
-                                                        </span>
-                                                        <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-medium ring-1 ring-emerald-200">
-                                                            Recv {d.received.toLocaleString('id-ID')}
                                                         </span>
                                                     </div>
                                                 </div>

@@ -1,3 +1,4 @@
+// components/dashboard/dashboard.tsx
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
@@ -13,6 +14,7 @@ import {
     useMaterialRequestProjectList,
     useMaterialRequestTypeSummary,
     useMaterialRequestDateRange,
+    useMakePo,
 } from '@/hooks/useMaterialRequestData';
 import { useTransactionData } from '@/hooks/useTransactionData';
 import type { ItemRow } from '@/types/item';
@@ -22,16 +24,17 @@ import ItemNeedPanel from '@/components/ui/item-demand-panel';
 import DepartmentChart from '@/components/dashboard/department-chart';
 import BranchList from '@/components/dashboard/branch-list';
 import DateRangeInputs from '@/components/ui/date-range-inputs';
-import { useMakePo } from '@/hooks/useMaterialRequestData';
 
 type Row = {
     id: string;
     name: string;
     total_stock: number;
     asked: number;
+    ordered: number;       // accumulated PO qty (qty_total_po)
     received: number;
     uom?: string | null;
     lastSupplier?: { id?: string; name?: string; date?: string } | null;
+    isPo?: boolean;
 };
 
 type MRType = 'Project' | 'Operational' | 'Stock' | 'Lain-lain';
@@ -263,10 +266,9 @@ export default function Dashboard() {
             (mr.items ?? []).forEach((it: MaterialRequestItem) => {
                 const code = it.item_code ?? '';
                 const qty = Number(it.qty ?? 0);
-                const ordered = Number(it.ordered_qty ?? 0);
-                const received = Number(it.received_qty ?? 0);
-                if (st === 'draft') add(code, { asked: qty });
-                else add(code, { asked: qty, ordered, received });
+                const totPo = Number(it.qty_total_po ?? 0);
+                // NEW: always accumulate asked and accumulated PO qty (qty_total_po)
+                add(code, { asked: qty, ordered: totPo, received: 0 });
             });
         });
 
@@ -298,6 +300,7 @@ export default function Dashboard() {
                 name: it.name,
                 total_stock: typeof (it as any).total_stock === 'number' ? (it as any).total_stock : 0,
                 asked: agg.asked,
+                ordered: agg.ordered,
                 received: agg.received,
                 uom: it.uom ?? '-',
                 lastSupplier: last ? { id: last.supplier_id, name: last.supplier_name, date: last.date } : null,
@@ -312,7 +315,7 @@ export default function Dashboard() {
         let base = rows;
         if (idQ) base = base.filter((r) => r.id.toLowerCase().includes(idQ));
         if (nameQ) base = base.filter((r) => r.name.toLowerCase().includes(nameQ));
-        if (onlyNeeded) base = base.filter((r) => (r.asked - r.received) > 0);
+        if (onlyNeeded) base = base.filter((r) => (r.asked - (r.ordered ?? 0)) > 0);
 
         if (selectedSupplierId) {
             base = base.filter((r) => {
@@ -366,6 +369,15 @@ export default function Dashboard() {
         queryClient.invalidateQueries({ queryKey: ['material-request', 'list'] });
     };
 
+    // support both react-query names: isPending (some wrappers) or isLoading (default)
+    const mutationPending = (makePoMutation as any)?.isPending || (makePoMutation as any)?.isLoading || false;
+
+    // --- Modal state: setelah berhasil makePO, kita tampilkan PO details di modal ---
+    const [poModalOpen, setPoModalOpen] = useState(false);
+    const [poModalData, setPoModalData] = useState<
+        { mr_name: string; item_code: string; po_detail: any[] }[]
+    >([]);
+
     const tableRightActions = (
         <div className="flex items-center gap-3">
             <div className="text-sm text-slate-600">Selected: <span className="font-medium ml-1">{makePoSet.size}</span></div>
@@ -374,23 +386,68 @@ export default function Dashboard() {
                     const itemCodes = Array.from(makePoSet);
                     if (itemCodes.length === 0) return;
 
+                    // build simple po_meta automatically (you can replace these with real inputs if available)
+                    const now = new Date();
+                    const poName = `PO-AUTO-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${now.getTime()}`;
+                    const poMeta = {
+                        po_name: poName,
+                        supplier: '', // you can set supplier here or prompt user
+                        transaction_date: now.toISOString().slice(0, 10),
+                    };
+
                     try {
-                        await makePoMutation.mutateAsync(itemCodes);
+                        // call API
+                        await makePoMutation.mutateAsync({ item_codes: itemCodes, po_meta: poMeta });
 
-                        // clear setelah berhasil
+                        // refresh data
+                        await queryClient.invalidateQueries({ queryKey: ['material-request', 'list'] });
+                        // refetch active queries to be sure
+                        await queryClient.refetchQueries({ queryKey: ['material-request', 'list'], type: 'active' });
+
+                        // fetch fresh data from cache (after refetch)
+                        const freshMrs = (queryClient.getQueryData(['material-request', 'list']) ?? mrs) as MaterialRequest[];
+
+                        // build modal payload: per MR that has items with item_codes, collect po_detail
+                        const modalEntries: { mr_name: string; item_code: string; po_detail: any[] }[] = [];
+
+                        const codesSet = new Set(itemCodes.map(c => (c || '').toString().toLowerCase()));
+
+                        (freshMrs || []).forEach((mr) => {
+                            (mr.items || []).forEach((it: MaterialRequestItem) => {
+                                const code = (it.item_code ?? '').toString();
+                                if (!code) return;
+                                if (!codesSet.has(code.toLowerCase())) return;
+
+                                // normalize po_detail to array
+                                const poDetailArr = Array.isArray((it as any).po_detail)
+                                    ? (it as any).po_detail
+                                    : ((it as any).po_detail ? [(it as any).po_detail] : []);
+
+                                modalEntries.push({
+                                    mr_name: mr.name ?? '',
+                                    item_code: code,
+                                    po_detail: poDetailArr,
+                                });
+                            });
+                        });
+
+                        // Set modal data and open
+                        setPoModalData(modalEntries);
+                        setPoModalOpen(true);
+
+                        // clear selection on success
                         setMakePoSet(new Set());
-                        console.log("PO updated:", itemCodes);
-
+                        console.log('PO updated:', itemCodes);
                     } catch (err) {
-                        console.error("Make PO error:", err);
+                        console.error('Make PO error:', err);
+                        // optionally show toast
                     }
                 }}
-                disabled={makePoMutation.isPending}
+                disabled={mutationPending}
                 className="rounded-md bg-sky-600 text-white px-3 py-1 text-sm hover:bg-sky-700 disabled:opacity-60"
             >
-                {makePoMutation.isPending ? "Processing..." : "Create PO"}
+                {mutationPending ? 'Processing...' : 'Create PO'}
             </button>
-
 
             <label className="text-sm text-slate-600">Rows:</label>
             <select
@@ -509,7 +566,7 @@ export default function Dashboard() {
                                         <input
                                             type="checkbox"
                                             checked={checked}
-                                            disabled={alreadyPo}            // <-- NEW: lock checkbox
+                                            disabled={alreadyPo}            // lock checkbox if already PO
                                             onClick={(e) => e.stopPropagation()}
                                             onMouseDown={(e) => e.stopPropagation()}
                                             onChange={(e) => {
@@ -523,7 +580,7 @@ export default function Dashboard() {
                                                 });
                                             }}
                                             className={`h-5 w-5 rounded border-slate-300 
-                    ${alreadyPo ? 'text-green-500 opacity-60 cursor-not-allowed' : 'text-sky-600'}`}
+                        ${alreadyPo ? 'text-green-500 opacity-60 cursor-not-allowed' : 'text-sky-600'}`}
                                             aria-label={`Make PO for ${r.id}`}
                                         />
                                     </div>
@@ -580,10 +637,69 @@ export default function Dashboard() {
             </div>
 
             {openItemId ? <ItemNeedPanel item={selectedItem} onClose={() => setOpenItemId(null)} /> : null}
+
+            {/* PO modal */}
+            {poModalOpen ? (
+                <>
+                    <div
+                        className="fixed inset-0 z-50 bg-black/40"
+                        onClick={() => setPoModalOpen(false)}
+                    />
+                    <div className="fixed left-1/2 top-12 -translate-x-1/2 z-60 w-[92%] max-w-4xl">
+                        <div className="rounded-xl overflow-hidden shadow-2xl bg-white">
+                            <div className="flex items-center justify-between px-5 py-4 border-b">
+                                <h3 className="text-lg font-semibold">PO details (recent)</h3>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        className="rounded-md px-3 py-1 bg-slate-100 text-sm"
+                                        onClick={() => setPoModalOpen(false)}
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="p-4 space-y-3 max-h-[60vh] overflow-auto">
+                                {poModalData.length === 0 ? (
+                                    <div className="p-4 text-sm text-slate-500">No PO details available.</div>
+                                ) : (
+                                    poModalData.map((entry, idx) => (
+                                        <div key={`${entry.mr_name}-${entry.item_code}-${idx}`} className="rounded-lg border p-3 bg-white">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <div className="font-medium text-slate-800 truncate">{entry.mr_name}</div>
+                                                    <div className="text-xs text-slate-500 mt-0.5">{entry.item_code}</div>
+                                                </div>
+                                                <div className="text-xs text-slate-500">{entry.po_detail.length} po(s)</div>
+                                            </div>
+
+                                            <div className="mt-3 grid gap-2">
+                                                {entry.po_detail.length === 0 ? (
+                                                    <div className="text-sm text-slate-500">No po_detail recorded yet.</div>
+                                                ) : entry.po_detail.map((pd: any, i: number) => (
+                                                    <div key={i} className="flex items-center justify-between gap-4 p-3 rounded-md border bg-slate-50">
+                                                        <div className="min-w-0">
+                                                            <div className="text-sm font-medium text-slate-800 truncate">{pd.po_name ?? pd.po_name}</div>
+                                                            <div className="text-xs text-slate-500 mt-0.5">
+                                                                {pd.supplier ? `${pd.supplier} • ` : ''}{pd.transaction_date ? new Date(pd.transaction_date).toLocaleDateString('id-ID') : ''}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="text-right">
+                                                            <div className="text-sm font-semibold text-slate-800">{(pd.qty ?? 0).toLocaleString('id-ID')}</div>
+                                                            <div className="text-xs text-slate-500 mt-0.5">{pd.uom ?? ''}</div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </>
+            ) : null}
         </div>
     );
-
-
 }
-
-
