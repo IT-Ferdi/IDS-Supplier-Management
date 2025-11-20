@@ -175,7 +175,6 @@ export default function Dashboard() {
     // table filters
     const [searchId, setSearchId] = useState('');
     const [searchName, setSearchName] = useState('');
-    const [onlyNeeded, setOnlyNeeded] = useState(true);
 
     const [openItemId, setOpenItemId] = useState<string | null>(null);
     const selectedItem = openItemId ? (items as ItemRow[]).find((it) => it.id === openItemId) ?? null : null;
@@ -206,7 +205,7 @@ export default function Dashboard() {
 
     const chartInput = (deptData || []).map((d) => ({ name: d.name, value: d.count }));
 
-    useEffect(() => setPage(1), [searchId, searchName, onlyNeeded, selectedStatus, selectedDept, selectedBranch, selectedProject, selectedType, mrStart, mrEnd, reqStart, reqEnd, selectedSupplierId, pageSize]);
+    useEffect(() => setPage(1), [searchId, searchName, selectedStatus, selectedDept, selectedBranch, selectedProject, selectedType, mrStart, mrEnd, reqStart, reqEnd, selectedSupplierId, pageSize]);
 
     // last purchase per item map
     const lastPurchaseByItem = useMemo(() => {
@@ -315,7 +314,7 @@ export default function Dashboard() {
         let base = rows;
         if (idQ) base = base.filter((r) => r.id.toLowerCase().includes(idQ));
         if (nameQ) base = base.filter((r) => r.name.toLowerCase().includes(nameQ));
-        if (onlyNeeded) base = base.filter((r) => (r.asked - (r.ordered ?? 0)) > 0);
+        // NOTE: removed onlyNeeded filtering — now show ALL items regardless of asked/ordered
 
         if (selectedSupplierId) {
             base = base.filter((r) => {
@@ -326,7 +325,7 @@ export default function Dashboard() {
         }
 
         return base;
-    }, [rows, searchId, searchName, onlyNeeded, selectedSupplierId]);
+    }, [rows, searchId, searchName, selectedSupplierId]);
 
     const totalRows = filtered.length;
     const paged = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
@@ -357,7 +356,6 @@ export default function Dashboard() {
         setSelectedType(null);
         setSearchId('');
         setSearchName('');
-        setOnlyNeeded(true);
         setPage(1);
 
         setMrStart(null);
@@ -446,7 +444,7 @@ export default function Dashboard() {
                 disabled={mutationPending}
                 className="rounded-md bg-sky-600 text-white px-3 py-1 text-sm hover:bg-sky-700 disabled:opacity-60"
             >
-                {mutationPending ? 'Processing...' : 'Create PO'}
+                {mutationPending ? 'Processing...' : 'Get Latest PO'}
             </button>
 
             <label className="text-sm text-slate-600">Rows:</label>
@@ -546,8 +544,6 @@ export default function Dashboard() {
             <div className="pt-1">
                 <DashboardTable<Row>
                     columns={[
-                        { key: 'id', header: 'Code', width: '120px', className: 'font-mono' },
-                        { key: 'name', header: 'Name', width: '260px' },
                         {
                             key: 'make_po',
                             header: 'Make PO',
@@ -588,7 +584,8 @@ export default function Dashboard() {
                             },
 
                         },
-
+                        { key: 'id', header: 'Code', width: '120px', className: 'font-mono' },
+                        { key: 'name', header: 'Name', width: '260px' },
                         { key: 'asked', header: 'Qty Asked', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-sky-50 text-sky-700 ring-sky-200">{r.asked.toLocaleString('id-ID')}</Badge> },
                         { key: 'total_stock', header: 'Stock Total', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{(r.total_stock || 0).toLocaleString('id-ID')}</Badge> },
                         { key: 'uom', header: 'UOM', width: '80px', className: 'text-center' },
@@ -625,18 +622,28 @@ export default function Dashboard() {
                     suppliers={supplierList}
                     selectedSupplierId={selectedSupplierId}
                     onSelectSupplier={(id) => setSelectedSupplierId(id)}
-
-                    /* ----- NEW PROPS (toggle checkbox) ----- */
-                    onlyNeeded={onlyNeeded}
-                    onToggleOnlyNeeded={(v) => setOnlyNeeded(v)}
-                    /* ---------------------------------------- */
-
                     onRowClick={(row) => setOpenItemId((row as Row).id)}
                 />
 
             </div>
 
-            {openItemId ? <ItemNeedPanel item={selectedItem} onClose={() => setOpenItemId(null)} /> : null}
+            {openItemId ? (
+                <ItemNeedPanel
+                    item={selectedItem}
+                    onClose={() => setOpenItemId(null)}
+                    filters={{
+                        selectedStatus,
+                        selectedDept,
+                        selectedBranch,
+                        selectedProject,
+                        selectedType,
+                        mrStart,
+                        mrEnd,
+                        reqStart,
+                        reqEnd,
+                    }}
+                />
+            ) : null}
 
             {/* PO modal */}
             {poModalOpen ? (

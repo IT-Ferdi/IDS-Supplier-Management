@@ -48,10 +48,6 @@ type Props<T> = {
   suppliers?: Supplier[];
   selectedSupplierId?: string | null;
   onSelectSupplier?: (id: string | null) => void;
-
-  // NEW: onlyNeeded toggle
-  onlyNeeded?: boolean;
-  onToggleOnlyNeeded?: (v: boolean) => void;
 };
 
 export default function DashboardTable<T>({
@@ -75,8 +71,6 @@ export default function DashboardTable<T>({
   suppliers = [],
   selectedSupplierId = null,
   onSelectSupplier,
-  onlyNeeded,
-  onToggleOnlyNeeded,
 }: Props<T>) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -103,7 +97,7 @@ export default function DashboardTable<T>({
   return (
     <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className || ''}`}>
       {/* Toolbar */}
-      {(showSearch || rightActions || suppliers.length > 0 || typeof onToggleOnlyNeeded === 'function') && (
+      {(showSearch || rightActions || suppliers.length > 0) && (
         <div className="flex flex-wrap items-center justify-between gap-2 p-3 border-b">
           {/* Left: searches (ID + Name) and supplier select (moved next to Name) */}
           <div className="flex flex-wrap items-center gap-2">
@@ -206,19 +200,6 @@ export default function DashboardTable<T>({
                   ) : null}
                 </div>
               </>
-            ) : null}
-
-            {/* NEW: Only needed toggle placed after searches */}
-            {typeof onToggleOnlyNeeded === 'function' ? (
-              <label className="flex items-center gap-2 ml-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={!!onlyNeeded}
-                  onChange={(e) => onToggleOnlyNeeded(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300"
-                />
-                <span>Only items needed</span>
-              </label>
             ) : null}
           </div>
 
