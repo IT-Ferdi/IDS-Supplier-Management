@@ -314,7 +314,9 @@ export default function Dashboard() {
         let base = rows;
         if (idQ) base = base.filter((r) => r.id.toLowerCase().includes(idQ));
         if (nameQ) base = base.filter((r) => r.name.toLowerCase().includes(nameQ));
-        // NOTE: removed onlyNeeded filtering — now show ALL items regardless of asked/ordered
+
+        // HAPUS item dengan asked === 0 (sesuai permintaan)
+        base = base.filter((r) => (r.asked ?? 0) > 0);
 
         if (selectedSupplierId) {
             base = base.filter((r) => {
@@ -326,6 +328,7 @@ export default function Dashboard() {
 
         return base;
     }, [rows, searchId, searchName, selectedSupplierId]);
+
 
     const totalRows = filtered.length;
     const paged = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
