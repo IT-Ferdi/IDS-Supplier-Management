@@ -544,6 +544,28 @@ export default function Dashboard() {
             <div className="pt-1">
                 <DashboardTable<Row>
                     columns={[
+                        { key: 'id', header: 'Code', width: '120px', className: 'font-mono' },
+                        { key: 'name', header: 'Name', width: '260px' },
+                        { key: 'asked', header: 'Qty Asked', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-sky-50 text-sky-700 ring-sky-200">{r.asked.toLocaleString('id-ID')}</Badge> },
+                        { key: 'total_stock', header: 'Stock Total', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{(r.total_stock || 0).toLocaleString('id-ID')}</Badge> },
+                        { key: 'uom', header: 'UOM', width: '80px', className: 'text-center' },
+                        {
+                            key: 'lastSupplier',
+                            header: 'Last Purchase',
+                            width: '100px',
+                            render: (r) => {
+                                const s = r.lastSupplier;
+                                if (!s) return <span className="text-slate-500">-</span>;
+                                return (
+                                    <div className="text-right">
+                                        <div className="truncate" title={s.name || ''}>
+                                            {s.name || s.id}
+                                        </div>
+                                        <div className="text-xs text-slate-400 mt-0.5">{s.date ? new Date(s.date).toLocaleDateString('id-ID') : ''}</div>
+                                    </div>
+                                );
+                            },
+                        },
                         {
                             key: 'make_po',
                             header: 'Make PO',
@@ -583,29 +605,7 @@ export default function Dashboard() {
                                 );
                             },
 
-                        },
-                        { key: 'id', header: 'Code', width: '120px', className: 'font-mono' },
-                        { key: 'name', header: 'Name', width: '260px' },
-                        { key: 'asked', header: 'Qty Asked', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-sky-50 text-sky-700 ring-sky-200">{r.asked.toLocaleString('id-ID')}</Badge> },
-                        { key: 'total_stock', header: 'Stock Total', width: '110px', className: 'text-right', render: (r) => <Badge cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{(r.total_stock || 0).toLocaleString('id-ID')}</Badge> },
-                        { key: 'uom', header: 'UOM', width: '80px', className: 'text-center' },
-                        {
-                            key: 'lastSupplier',
-                            header: 'Last Purchase',
-                            width: '100px',
-                            render: (r) => {
-                                const s = r.lastSupplier;
-                                if (!s) return <span className="text-slate-500">-</span>;
-                                return (
-                                    <div className="text-right">
-                                        <div className="truncate" title={s.name || ''}>
-                                            {s.name || s.id}
-                                        </div>
-                                        <div className="text-xs text-slate-400 mt-0.5">{s.date ? new Date(s.date).toLocaleDateString('id-ID') : ''}</div>
-                                    </div>
-                                );
-                            },
-                        },
+                        }
                     ]}
                     data={paged}
                     loading={loading}
