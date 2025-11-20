@@ -98,6 +98,44 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
         return { mrRows: rows, projects, costCenters, departments, mrIds };
     }, [mrs, item]);
 
+    // NEW: collect PO references (po_detail) for MR items that reference this item
+    const poByMr = useMemo(() => {
+        // result: Array<{ mrName: string, poEntries: Array<{po_name, transaction_date, supplier, qty, uom}> }>
+        const out: { mrName: string; poEntries: any[] }[] = [];
+
+        (mrs as MaterialRequest[]).forEach((mr) => {
+            // find items matching the item code
+            const matchedItems = (mr.items ?? []).filter(it => {
+                if (!item?.id) return false;
+                return (it.item_code ?? '').toLowerCase() === item.id.toLowerCase();
+            });
+
+            if (matchedItems.length === 0) return;
+
+            // collect all po_detail entries from matched items (flatten)
+            const entries: any[] = [];
+            matchedItems.forEach(it => {
+                const arr = Array.isArray((it as any).po_detail) ? (it as any).po_detail : [];
+                arr.forEach((p: any) => {
+                    // normalize minimal fields
+                    entries.push({
+                        po_name: p?.po_name ?? p?.name ?? '',
+                        transaction_date: p?.transaction_date ?? p?.date ?? '',
+                        supplier: p?.supplier ?? '',
+                        qty: typeof p?.qty === 'number' ? p.qty : Number(p?.qty ?? 0),
+                        uom: p?.uom ?? '',
+                    });
+                });
+            });
+
+            if (entries.length > 0) {
+                out.push({ mrName: mr.name ?? '', poEntries: entries });
+            }
+        });
+
+        return out;
+    }, [mrs, item]);
+
     // Warehouse stock list: ambil dari `item.stock_warehouse` jika tersedia.
     // Filter qty > 0 dan urutkan desc.
     const warehouses = useMemo(() => {
@@ -114,6 +152,12 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
     }, [item]);
 
     const handleMrClick = (orderName: string) => {
+        const encodedName = encodeURIComponent(orderName);
+        const url = `https://erpintidaya.jasaweb.co/app/material-request/${encodedName}`;
+        window.open(url, '_blank');
+    };
+
+    const handlePoClick = (orderName: string) => {
         const encodedName = encodeURIComponent(orderName);
         const url = `https://erpintidaya.jasaweb.co/app/material-request/${encodedName}`;
         window.open(url, '_blank');
@@ -229,62 +273,101 @@ export default function ItemDemandPanel({ item, onClose }: Props) {
                                                 <div
                                                     key={m.id}
                                                     onClick={() => handleMrClick(m.id)}
-                                                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-white cursor-pointer 
-             hover:bg-slate-50 hover:border-sky-200 transition-colors duration-150"
+                                                    className="flex items-start justify-between rounded-lg border border-slate-200 px-3 py-2 bg-white cursor-pointer hover:bg-slate-50 hover:border-sky-200 transition-colors duration-150"
                                                 >
-                                                    <div className="flex items-start justify-between w-full">
-                                                        {/* Kiri: ID, tanggal + status */}
-                                                        <div className="min-w-0">
-                                                            {/* ID */}
-                                                            <p className="font-medium text-slate-800 truncate">{m.id}</p>
+                                                    <div className="min-w-0">
+                                                        <p className="font-medium text-slate-800 truncate">{m.id}</p>
 
-                                                            {/* Tanggal & Status */}
-                                                            <div className="flex items-center gap-2 text-xs mt-1">
-                                                                <div className="flex items-center gap-1 bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full ring-1 ring-sky-100">
-                                                                    <svg
-                                                                        xmlns="http://www.w3.org/2000/svg"
-                                                                        className="h-3.5 w-3.5 text-sky-600"
-                                                                        fill="none"
-                                                                        viewBox="0 0 24 24"
-                                                                        stroke="currentColor"
-                                                                        strokeWidth={2}
-                                                                    >
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10m-12 8h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                                                    </svg>
-                                                                    <span className="font-medium">
-                                                                        {m.date ? new Date(m.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
-                                                                    </span>
-                                                                </div>
-
-                                                                <Badge
-                                                                    variant="secondary"
-                                                                    className={
-                                                                        (m.status || '').toLowerCase() === 'draft'
-                                                                            ? 'bg-slate-100 text-slate-700 border border-slate-200'
-                                                                            : (m.status || '').toLowerCase() === 'pending'
-                                                                                ? 'bg-red-100 text-red-700 border border-red-200'
-                                                                                : 'bg-yellow-100 text-yellow-700 border border-yellow-200'
-                                                                    }
+                                                        <div className="flex items-center gap-2 text-xs mt-1">
+                                                            <div className="flex items-center gap-1 bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full ring-1 ring-sky-100">
+                                                                <svg
+                                                                    xmlns="http://www.w3.org/2000/svg"
+                                                                    className="h-3.5 w-3.5 text-sky-600"
+                                                                    fill="none"
+                                                                    viewBox="0 0 24 24"
+                                                                    stroke="currentColor"
+                                                                    strokeWidth={2}
                                                                 >
-                                                                    {m.status}
-                                                                </Badge>
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10m-12 8h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                                                </svg>
+                                                                <span className="font-medium">
+                                                                    {m.date ? new Date(m.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                                                                </span>
                                                             </div>
-                                                        </div>
 
-                                                        {/* Kanan: angka Asked, Ordered */}
-                                                        <div className="flex flex-col items-end gap-1 text-xs text-slate-700">
-                                                            <Badge className="bg-sky-50 text-sky-700 ring-sky-200 text-[11px] px-2 py-0.5">
-                                                                Asked {m.asked.toLocaleString('id-ID')}
-                                                            </Badge>
-                                                            <Badge className="bg-amber-50 text-amber-700 ring-amber-200 text-[11px] px-2 py-0.5">
-                                                                Ordered {m.ordered.toLocaleString('id-ID')}
+                                                            <Badge
+                                                                variant="secondary"
+                                                                className={
+                                                                    (m.status || '').toLowerCase() === 'draft'
+                                                                        ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                                                                        : (m.status || '').toLowerCase() === 'pending'
+                                                                            ? 'bg-red-100 text-red-700 border border-red-200'
+                                                                            : 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                                                                }
+                                                            >
+                                                                {m.status}
                                                             </Badge>
                                                         </div>
+                                                    </div>
+
+                                                    {/* Kanan: angka Asked, Ordered */}
+                                                    <div className="flex flex-col items-end gap-1 text-xs text-slate-700">
+                                                        <Badge className="bg-sky-50 text-sky-700 ring-sky-200 text-[11px] px-2 py-0.5">
+                                                            Asked {m.asked.toLocaleString('id-ID')}
+                                                        </Badge>
+                                                        <Badge className="bg-amber-50 text-amber-700 ring-amber-200 text-[11px] px-2 py-0.5">
+                                                            Ordered {m.ordered.toLocaleString('id-ID')}
+                                                        </Badge>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
                                     </Card>
+                                )}
+                            </section>
+
+                            {/* NEW: PO details referencing these MRs */}
+                            <section>
+                                <h3 className="text-sm font-medium text-slate-600 mb-2 flex items-center gap-2">
+                                    <svg className="h-4 w-4 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7h18M3 12h18M3 17h18" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                    Purchase Orders
+                                </h3>
+
+                                {isLoading ? (
+                                    <p className="text-sm text-slate-500">Loading…</p>
+                                ) : poByMr.length === 0 ? (
+                                    <p className="text-sm text-slate-500">Belum ada PO (po_detail) yang terhubung ke MR ini.</p>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {poByMr.map((entry) => (
+                                            <Card key={entry.mrName} className="p-3">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="min-w-0">
+                                                        <div className="text-sm font-medium text-slate-800 truncate">{entry.mrName}</div>
+                                                        <div className="text-xs text-slate-500">POs for this MR</div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid gap-2">
+                                                    {entry.poEntries.map((p, i) => (
+                                                        <div key={i} className="flex items-center justify-between rounded-md border border-slate-100 p-3 bg-white">
+                                                            <div className="min-w-0">
+                                                                <div className="text-sm font-medium text-slate-800 truncate">{p.po_name || '-'}</div>
+                                                                <div className="text-xs text-slate-500 mt-0.5">
+                                                                    {p.supplier ? `${p.supplier}` : 'No supplier'} • {p.transaction_date ? new Date(p.transaction_date).toLocaleDateString('id-ID') : '-'}
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="text-right">
+                                                                <div className="text-sm font-semibold text-slate-700">{Number(p.qty ?? 0).toLocaleString('id-ID')}</div>
+                                                                <div className="text-xs text-slate-500">{p.uom ?? ''}</div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </Card>
+                                        ))}
+                                    </div>
                                 )}
                             </section>
 
