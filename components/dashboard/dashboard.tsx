@@ -181,6 +181,10 @@ export default function Dashboard() {
 
     const [makePoSet, setMakePoSet] = useState<Set<string>>(new Set());
 
+    // Show All Items toggle:
+    // default false (per your last instruction)
+    const [showAllItems, setShowAllItems] = useState<boolean>(false);
+
     // toggle handler
     const handleToggleMakePo = (id: string) => {
         setMakePoSet((prev) => {
@@ -266,11 +270,30 @@ export default function Dashboard() {
                 const code = it.item_code ?? '';
                 const qty = Number(it.qty ?? 0);
                 const totPo = Number(it.qty_total_po ?? 0);
-                // NEW: always accumulate asked and accumulated PO qty (qty_total_po)
+                // always accumulate asked and accumulated PO qty (qty_total_po)
                 add(code, { asked: qty, ordered: totPo, received: 0 });
             });
         });
 
+        return map;
+    }, [filteredMRs]);
+
+    // compute per-item PO status summary from filteredMRs:
+    // { anyTrue: boolean, anyFalse: boolean, anyMissing: boolean }
+    const poStatsByItem = useMemo(() => {
+        const map = new Map<string, { anyTrue: boolean; anyFalse: boolean; anyMissing: boolean }>();
+        (filteredMRs as MaterialRequest[]).forEach((mr) => {
+            (mr.items ?? []).forEach((it: MaterialRequestItem) => {
+                const code = (it.item_code ?? '').toString();
+                if (!code) return;
+                const cur = map.get(code) ?? { anyTrue: false, anyFalse: false, anyMissing: false };
+                const val = (it as any).is_po;
+                if (val === true) cur.anyTrue = true;
+                else if (val === false) cur.anyFalse = true;
+                else cur.anyMissing = true; // undefined / null / not present
+                map.set(code, cur);
+            });
+        });
         return map;
     }, [filteredMRs]);
 
@@ -315,8 +338,21 @@ export default function Dashboard() {
         if (idQ) base = base.filter((r) => r.id.toLowerCase().includes(idQ));
         if (nameQ) base = base.filter((r) => r.name.toLowerCase().includes(nameQ));
 
-        // HAPUS item dengan asked === 0 (sesuai permintaan)
-        base = base.filter((r) => (r.asked ?? 0) > 0);
+        // Always require asked > ordered (only outstanding items)
+        base = base.filter((r) => (r.asked ?? 0) > (r.ordered ?? 0));
+
+        // If showAllItems is true: show all outstanding items regardless of is_po
+        // If showAllItems is false (default): show only outstanding items that do NOT have any is_po === true
+        if (!showAllItems) {
+            base = base.filter((r) => {
+                const code = (r.id || '').toString();
+                const stats = poStatsByItem.get(code);
+                // treat missing stats as "no is_po true" (i.e. include)
+                const anyTrue = stats?.anyTrue ?? false;
+                // include only when not anyTrue (so items with anyTrue will be excluded)
+                return !anyTrue;
+            });
+        }
 
         if (selectedSupplierId) {
             base = base.filter((r) => {
@@ -327,8 +363,7 @@ export default function Dashboard() {
         }
 
         return base;
-    }, [rows, searchId, searchName, selectedSupplierId]);
-
+    }, [rows, searchId, searchName, selectedSupplierId, poStatsByItem, showAllItems]);
 
     const totalRows = filtered.length;
     const paged = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
@@ -381,6 +416,17 @@ export default function Dashboard() {
 
     const tableRightActions = (
         <div className="flex items-center gap-3">
+            <div className="flex items-center justify-end gap-4">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                        type="checkbox"
+                        checked={showAllItems}
+                        onChange={(e) => setShowAllItems(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300"
+                    />
+                    <span>Show All Items</span>
+                </label>
+            </div>
             <div className="text-sm text-slate-600">Selected: <span className="font-medium ml-1">{makePoSet.size}</span></div>
             <button
                 onClick={async () => {
