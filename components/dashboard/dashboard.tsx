@@ -548,7 +548,7 @@ export default function Dashboard() {
                         >
                             <option value="">All projects</option>
                             {projectList.map((p) => (
-                                <option key={p.name} value={p.name}>{p.name} ({p.count})</option>
+                                <option key={p.name} value={p.name}>{p.name}</option>
                             ))}
                         </select>
                     </div>
