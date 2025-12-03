@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Plus, Search, Download, X } from 'lucide-react';
+import { Plus, Search, Download, X, Eye } from 'lucide-react';
 import StarRating from '@/components/ui/star-rating';
 
 export type SupplierStatus = 'ACTIVE' | 'INACTIVE';
@@ -144,6 +144,7 @@ export default function SupplierTable({
                   'Payment Terms',
                   'Categories',
                   'Rating',
+                  'Items',
                 ].map((h) => (
                   <th key={h} className="px-4 py-3 font-medium">
                     {h}
@@ -174,6 +175,7 @@ export default function SupplierTable({
                     <td className="px-4 py-3">
                       <span
                         className={
+
                           'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ' +
                           (s.status === 'ACTIVE'
                             ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200'
@@ -213,6 +215,22 @@ export default function SupplierTable({
 
                     <td className="px-4 py-3">
                       <StarRating value={s.rating ?? 0} readOnly size={16} step={0.5} />
+                    </td>
+
+                    {/* Items button column */}
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // navigasi ke page items
+                          window.location.href = `/supplier/${s.code}/items`;
+                        }}
+                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-700 shadow-sm hover:bg-sky-50 hover:text-sky-700 transition"
+                        title="View Items"
+                      >
+                        <Eye className="h-4 w-4" />
+                        View
+                      </button>
                     </td>
                   </tr>
                 ))

@@ -23,6 +23,9 @@ type Props = {
         mrEnd?: string | null;
         reqStart?: string | null;
         reqEnd?: string | null;
+        // NEW delivery range filters:
+        deliveryStart?: string | null;
+        deliveryEnd?: string | null;
     };
 };
 
@@ -43,6 +46,38 @@ export default function ItemDemandPanel({ item, onClose, filters }: Props) {
         required_end: filters?.reqEnd ?? null,
     });
 
+    // prepare delivery date range timestamps (if provided)
+    const deliveryStartTs = useMemo(() => {
+        if (!filters?.deliveryStart) return null;
+        const d = new Date(filters.deliveryStart);
+        if (isNaN(d.getTime())) return null;
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    }, [filters?.deliveryStart]);
+
+    const deliveryEndTs = useMemo(() => {
+        if (!filters?.deliveryEnd) return null;
+        const d = new Date(filters.deliveryEnd);
+        if (isNaN(d.getTime())) return null;
+        // include whole day
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+    }, [filters?.deliveryEnd]);
+
+    // helper: check whether an item-level delivery_date matches current delivery range filter
+    const deliveryMatches = (it: MaterialRequestItem) => {
+        // if no delivery filter active -> everything matches
+        if (deliveryStartTs === null && deliveryEndTs === null) return true;
+
+        const raw = (it as any).delivery_date ?? (it as any).due_date ?? null;
+        if (!raw) return false; // when delivery filter active, require delivery_date present
+
+        const d = new Date(raw);
+        if (isNaN(d.getTime())) return false;
+        const ts = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        if (deliveryStartTs !== null && ts < deliveryStartTs) return false;
+        if (deliveryEndTs !== null && ts > deliveryEndTs) return false;
+        return true;
+    };
+
     // Build rows: only MR items that match the selected item.id and outstanding (qty > qty_total_po)
     const { mrRows, projects, costCenters, departments, mrIds } = useMemo(() => {
         type Row = {
@@ -54,6 +89,7 @@ export default function ItemDemandPanel({ item, onClose, filters }: Props) {
             department?: string;
             qty: number;
             ordered: number; // qty_total_po (fallback ordered_qty)
+            delivery_date?: string | null;
         };
 
         const rows: Row[] = [];
@@ -62,6 +98,9 @@ export default function ItemDemandPanel({ item, onClose, filters }: Props) {
             (mr.items ?? []).forEach((it: MaterialRequestItem) => {
                 if (!item?.id) return;
                 if ((it.item_code ?? '').toLowerCase() !== item.id.toLowerCase()) return;
+
+                // respect delivery date filter: if active and item has no delivery_date or out of range -> skip
+                if (!deliveryMatches(it)) return;
 
                 const qty = Number(it.qty ?? 0);
                 const totPo = Number(it.qty_total_po ?? it.ordered_qty ?? 0);
@@ -78,6 +117,7 @@ export default function ItemDemandPanel({ item, onClose, filters }: Props) {
                     department: it.department ?? '',
                     qty,
                     ordered: totPo,
+                    delivery_date: (it as any).delivery_date ?? null,
                 });
             });
         });
@@ -116,7 +156,7 @@ export default function ItemDemandPanel({ item, onClose, filters }: Props) {
         const mrIds = Array.from(mrMap.entries()).map(([id, v]) => ({ id, ...v }));
 
         return { mrRows: rows, projects, costCenters, departments, mrIds };
-    }, [filteredMRs, item]);
+    }, [filteredMRs, item, deliveryStartTs, deliveryEndTs]);
 
     // Build PO entries referencing this MR/item (for PO section)
     const poEntries = useMemo(() => {
@@ -131,9 +171,12 @@ export default function ItemDemandPanel({ item, onClose, filters }: Props) {
                 if (!item?.id) return;
                 if ((it.item_code ?? '').toLowerCase() !== item.id.toLowerCase()) return;
 
+                // respect delivery date filter here too
+                if (!deliveryMatches(it)) return;
+
                 // normalize po_detail to array
                 const arr = Array.isArray(it.po_detail) ? it.po_detail : (it.po_detail ? [it.po_detail] : []);
-                // only include if there is at least one po_detail entry
+                // include even if arr length 0? per previous behavior we skip empty po lists
                 if (arr.length === 0) return;
 
                 list.push({
@@ -151,7 +194,7 @@ export default function ItemDemandPanel({ item, onClose, filters }: Props) {
         });
 
         return list;
-    }, [filteredMRs, item]);
+    }, [filteredMRs, item, deliveryStartTs, deliveryEndTs]);
 
     // Warehouse stock (unchanged)
     const warehouses = useMemo(() => {
@@ -285,39 +328,37 @@ export default function ItemDemandPanel({ item, onClose, filters }: Props) {
                                                 <div
                                                     key={m.id}
                                                     onClick={() => handleMrClick(m.id)}
-                                                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-white cursor-pointer 
+                                                    className="flex items-start justify-between rounded-lg border border-slate-200 px-3 py-2 bg-white cursor-pointer 
              hover:bg-slate-50 hover:border-sky-200 transition-colors duration-150"
                                                 >
-                                                    <div className="flex items-start justify-between w-full">
-                                                        <div className="min-w-0">
-                                                            <p className="font-medium text-slate-800 truncate">{m.id}</p>
-                                                            <div className="flex items-center gap-2 text-xs mt-1">
-                                                                <div className="flex items-center gap-1 bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full ring-1 ring-sky-100">
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10m-12 8h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                                                    </svg>
-                                                                    <span className="font-medium">{m.date ? new Date(m.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</span>
-                                                                </div>
-
-                                                                <Badge
-                                                                    variant="secondary"
-                                                                    className={
-                                                                        (m.status || '').toLowerCase() === 'draft'
-                                                                            ? 'bg-slate-100 text-slate-700 border border-slate-200'
-                                                                            : (m.status || '').toLowerCase() === 'pending'
-                                                                                ? 'bg-red-100 text-red-700 border border-red-200'
-                                                                                : 'bg-yellow-100 text-yellow-700 border border-yellow-200'
-                                                                    }
-                                                                >
-                                                                    {m.status}
-                                                                </Badge>
+                                                    <div className="min-w-0">
+                                                        <p className="font-medium text-slate-800 truncate">{m.id}</p>
+                                                        <div className="flex items-center gap-2 text-xs mt-1">
+                                                            <div className="flex items-center gap-1 bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full ring-1 ring-sky-100">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10m-12 8h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                                                </svg>
+                                                                <span className="font-medium">{m.date ? new Date(m.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</span>
                                                             </div>
-                                                        </div>
 
-                                                        <div className="flex flex-col items-end gap-1 text-xs text-slate-700">
-                                                            <Badge className="bg-sky-50 text-sky-700 ring-sky-200 text-[11px] px-2 py-0.5">Asked {m.asked.toLocaleString('id-ID')}</Badge>
-                                                            <Badge className="bg-amber-50 text-amber-700 ring-amber-200 text-[11px] px-2 py-0.5">Ordered {m.ordered.toLocaleString('id-ID')}</Badge>
+                                                            <Badge
+                                                                variant="secondary"
+                                                                className={
+                                                                    (m.status || '').toLowerCase() === 'draft'
+                                                                        ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                                                                        : (m.status || '').toLowerCase() === 'pending'
+                                                                            ? 'bg-red-100 text-red-700 border border-red-200'
+                                                                            : 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                                                                }
+                                                            >
+                                                                {m.status}
+                                                            </Badge>
                                                         </div>
+                                                    </div>
+
+                                                    <div className="flex flex-col items-end gap-1 text-xs text-slate-700">
+                                                        <Badge className="bg-sky-50 text-sky-700 ring-sky-200 text-[11px] px-2 py-0.5">Asked {m.asked.toLocaleString('id-ID')}</Badge>
+                                                        <Badge className="bg-amber-50 text-amber-700 ring-amber-200 text-[11px] px-2 py-0.5">Ordered {m.ordered.toLocaleString('id-ID')}</Badge>
                                                     </div>
                                                 </div>
                                             ))}
@@ -350,8 +391,8 @@ export default function ItemDemandPanel({ item, onClose, filters }: Props) {
 
                                                     <div className="mt-3 grid gap-2">
                                                         {pe.po_details.map((pd, i) => (
-                                                            <div key={i} 
-                                                            className="flex items-center justify-between gap-4 p-3 rounded-md border bg-slate-50 cursor-pointer hover:brightness-95 hover:border-sky-200 transition-all duration-150"
+                                                            <div key={i}
+                                                                className="flex items-center justify-between gap-4 p-3 rounded-md border bg-slate-50 cursor-pointer hover:brightness-95 hover:border-sky-200 transition-all duration-150"
                                                                 onClick={() => handlePoClick(pd.po_name ?? '')}>
                                                                 <div className="min-w-0">
                                                                     <div className="text-sm font-medium text-slate-800 truncate">{pd.po_name ?? '-'}</div>

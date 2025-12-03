@@ -23,6 +23,7 @@ import DashboardSummary from '@/components/dashboard/dashboard-summary';
 import ItemNeedPanel from '@/components/ui/item-demand-panel';
 import DepartmentChart from '@/components/dashboard/department-chart';
 import BranchList from '@/components/dashboard/branch-list';
+import ProjectDeliveryTable from '@/components/dashboard/project-delivery-table';
 import DateRangeInputs from '@/components/ui/date-range-inputs';
 
 type Row = {
@@ -571,17 +572,39 @@ export default function Dashboard() {
                 </div>
 
                 {!loading && !deptLoading ? (
-                    <div className="md:col-span-2 row-span-1">
-                        <DepartmentChart
-                            data={typeData.map((t: any) => ({ name: t.type ?? t.name ?? t.name, value: t.count ?? t.value ?? 0 }))}
-                            selectedStatus={selectedStatus}
-                            selectedDept={selectedDept}
-                            onDeptClick={(name) => {
-                                setSelectedType((prev) => (prev === name ? null : (name as MRType)));
-                            }}
-                            title="Tipe MR"
-                            height={402}
-                        />
+                    <div className="md:col-span-2 row-span-1 grid grid-cols-2 gap-4">
+                        {/* Department chart dikurangi lebar: gunakan col-span 1 */}
+                        <div className="col-span-1">
+                            <DepartmentChart
+                                data={typeData.map((t: any) => ({ name: t.type ?? t.name ?? t.name, value: t.count ?? t.value ?? 0 }))}
+                                selectedStatus={selectedStatus}
+                                selectedDept={selectedDept}
+                                onDeptClick={(name) => {
+                                    setSelectedType((prev) => (prev === name ? null : (name as MRType)));
+                                }}
+                                title="Tipe MR"
+                                height={402}
+                            />
+                        </div>
+
+                        {/* Project delivery table di samping chart */}
+                        <div className="col-span-1">
+                            <ProjectDeliveryTable
+                                filters={{
+                                    selectedStatus,
+                                    selectedBranch,
+                                    selectedType,
+                                    start_date: mrStart,
+                                    end_date: mrEnd,
+                                    required_start: reqStart,
+                                    required_end: reqEnd,
+                                    selectedDepartment: selectedDept,
+                                    selectedProject,
+                                }}
+                                onSelectProject={(p) => setSelectedProject((prev) => (prev === p ? null : p))}
+                                maxRows={12}
+                            />
+                        </div>
                     </div>
                 ) : (
                     <div className="md:col-span-2 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 flex items-center justify-center">

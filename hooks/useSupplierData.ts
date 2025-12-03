@@ -23,6 +23,14 @@ type SupplierDoc = {
     categories?: string[] | null;
 };
 
+export type SupplierItemRow = {
+    item_code: string;
+    name: string;
+    uom?: string | null;
+    lastPrice: number;
+    lastPurchaseAt: string;
+};
+
 const normalize = (d: SupplierDoc): SupplierRow => ({
     id: d.id,
     nama: d.nama,
@@ -56,5 +64,21 @@ export function useSuppliers() {
         queryKey: ['suppliers'],
         queryFn: fetchSuppliers,
         staleTime: 5 * 60 * 1000, // 5 menit
+    });
+}
+
+async function fetchSupplierItems(supplierId: string): Promise<SupplierItemRow[]> {
+    const res = await fetch(`/api/supplier/${supplierId}/items`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Failed to fetch supplier items');
+    const json = await res.json();
+    return json ?? [];
+}
+
+export function useSupplierItems(supplierId?: string) {
+    return useQuery({
+        queryKey: ['supplier-items', supplierId],
+        queryFn: () => fetchSupplierItems(supplierId!),
+        enabled: Boolean(supplierId),
+        staleTime: 300_000,
     });
 }
