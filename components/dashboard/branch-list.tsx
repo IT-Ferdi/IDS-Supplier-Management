@@ -33,7 +33,7 @@ export default function BranchList({
                 <div className="text-xs text-slate-500">Total MR: <span className="font-medium text-slate-700">{total}</span></div>
             </div>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto">
+            <div className="space-y-2 max-h-84 overflow-y-auto">
                 {visible.map((d, idx) => {
                     const active = selectedBranch === d.name;
                     const color = COLORS[idx % COLORS.length];

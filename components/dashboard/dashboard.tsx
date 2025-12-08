@@ -35,6 +35,8 @@ type Row = {
     received: number;
     uom?: string | null;
     lastSupplier?: { id?: string; name?: string; date?: string } | null;
+    lastPrice?: number | null;
+    lastUom?: string | null;
     isPo?: boolean;
 };
 
@@ -212,23 +214,51 @@ export default function Dashboard() {
 
     useEffect(() => setPage(1), [searchId, searchName, selectedStatus, selectedDept, selectedBranch, selectedProject, selectedType, mrStart, mrEnd, reqStart, reqEnd, selectedSupplierId, pageSize]);
 
-    // last purchase per item map
+    // last purchase per item map (capture last supplier, date, price and uom)
     const lastPurchaseByItem = useMemo(() => {
-        const map = new Map<string, { supplier_id?: string; supplier_name?: string; date?: string }>();
+        const map = new Map<string, { supplier_id?: string; supplier_name?: string; date?: string; price?: number; uom?: string }>();
         (transactions || []).forEach((tx) => {
             const txDate = tx.transaction_date;
             if (!txDate) return;
-            (tx.items || []).forEach((it) => {
+            (tx.items || []).forEach((it: any) => {
                 const code = (it.item_code || '').toString();
                 if (!code) return;
                 const cur = map.get(code);
                 const curTime = cur?.date ? new Date(cur.date).getTime() : 0;
                 const thisTime = new Date(txDate).getTime();
                 if (!cur || thisTime > curTime) {
+                    // find price using common field names
+                    let price: number | undefined = undefined;
+                    const priceCandidates = ['unit_price', 'price', 'purchase_price', 'rate', 'amount', 'supplier_price', 'cost', 'unit_rate'];
+                    for (const k of priceCandidates) {
+                        if (it[k] !== undefined && it[k] !== null) {
+                            const n = Number(it[k]);
+                            if (!isNaN(n)) { price = n; break; }
+                        }
+                    }
+                    // fallback: maybe transaction-level totals exist
+                    if ((price === undefined) && (it.qty && (it.total_amount))) {
+                        const total = Number(it.total_amount ?? 0);
+                        const q = Number(it.qty ?? 0);
+                        if (q > 0 && total > 0) price = total / q;
+                    }
+
+                    // find uom using common field names (prefer item-level uom)
+                    const uomCandidates = ['uom', 'unit', 'unit_of_measure', 'uom_code'];
+                    let uom: string | undefined = undefined;
+                    for (const k of uomCandidates) {
+                        if (it[k]) {
+                            uom = String(it[k]);
+                            break;
+                        }
+                    }
+
                     map.set(code, {
                         supplier_id: tx.supplier ?? '',
                         supplier_name: tx.supplier_name ?? '',
                         date: txDate,
+                        price: price,
+                        uom: uom,
                     });
                 }
             });
@@ -236,7 +266,13 @@ export default function Dashboard() {
         return map;
     }, [transactions]);
 
-    const statusesForAgg = selectedStatus ? selectedStatus : ['draft', 'partially ordered', 'pending'];
+
+
+    const statusesForAgg = useMemo(() => {
+        if (!selectedStatus) return ['draft', 'partially ordered', 'pending'];
+        return Array.isArray(selectedStatus) ? selectedStatus : [selectedStatus];
+    }, [selectedStatus]);
+
 
     const { filtered: filteredMRs = [] } = useFilteredMaterialRequests({
         selectedStatus: statusesForAgg,
@@ -327,8 +363,11 @@ export default function Dashboard() {
                 received: agg.received,
                 uom: it.uom ?? '-',
                 lastSupplier: last ? { id: last.supplier_id, name: last.supplier_name, date: last.date } : null,
+                lastPrice: last?.price ?? null,
+                lastUom: last?.uom ?? (it.uom ?? null), // prefer transaction uom, fallback to item master uom
                 isPo: isPoByItem.get(it.id) === true,
             };
+
         });
     }, [items, aggByItem, lastPurchaseByItem, isPoByItem]);
 
@@ -538,43 +577,34 @@ export default function Dashboard() {
                 onRefresh={handleResetAll}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                <div className="md:col-span-1 space-y-3">
-                    <div className="rounded-xl border border-slate-200 bg-white p-3">
-                        <label className="text-sm text-slate-600 mb-2 block">Project</label>
-                        <select
-                            value={selectedProject ?? ''}
-                            onChange={(e) => setSelectedProject(e.target.value || null)}
-                            className="w-full rounded-md border px-2 py-1 text-sm"
-                        >
-                            <option value="">All projects</option>
-                            {projectList.map((p) => (
-                                <option key={p.name} value={p.name}>{p.name}</option>
-                            ))}
-                        </select>
+            {/* ===== REPLACE THIS ENTIRE BLOCK ===== */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2">
+                {/* LEFT: BranchList (1/4 width on md+) */}
+                <div className="md:col-span-1">
+                    <div className="space-y-3">
+                        <BranchList
+                            data={branchData}
+                            total={branchTotal}
+                            selectedBranch={selectedBranch}
+                            onBranchClick={(b) => setSelectedBranch((prev) => (prev === b ? null : b))}
+                            title="Cabang / Kota"
+                        />
+
+                        {!loadingReqRange && !loadingMrRange ? (
+                            <div />
+                        ) : (
+                            <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+                                Loading date range...
+                            </div>
+                        )}
                     </div>
-
-                    <BranchList
-                        data={branchData}
-                        total={branchTotal}
-                        selectedBranch={selectedBranch}
-                        onBranchClick={(b) => setSelectedBranch((prev) => (prev === b ? null : b))}
-                        title="Cabang / Kota"
-                    />
-
-                    {!loadingReqRange && !loadingMrRange ? (
-                        <div /> // ranges managed inside DashboardSummary now
-                    ) : (
-                        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
-                            Loading date range...
-                        </div>
-                    )}
                 </div>
 
+                {/* RIGHT: Chart (span 2) + Project table (span 1) */}
                 {!loading && !deptLoading ? (
-                    <div className="md:col-span-2 row-span-1 grid grid-cols-2 gap-4">
-                        {/* Department chart dikurangi lebar: gunakan col-span 1 */}
-                        <div className="col-span-1">
+                    <>
+                        {/* Chart occupying 2 columns */}
+                        <div className="md:col-span-2">
                             <DepartmentChart
                                 data={typeData.map((t: any) => ({ name: t.type ?? t.name ?? t.name, value: t.count ?? t.value ?? 0 }))}
                                 selectedStatus={selectedStatus}
@@ -587,8 +617,8 @@ export default function Dashboard() {
                             />
                         </div>
 
-                        {/* Project delivery table di samping chart */}
-                        <div className="col-span-1">
+                        {/* ProjectDeliveryTable occupying 1 column (ke kanan) */}
+                        <div className="md:col-span-1">
                             <ProjectDeliveryTable
                                 filters={{
                                     selectedStatus,
@@ -605,9 +635,9 @@ export default function Dashboard() {
                                 maxRows={12}
                             />
                         </div>
-                    </div>
+                    </>
                 ) : (
-                    <div className="md:col-span-2 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 flex items-center justify-center">
+                    <div className="md:col-span-3 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 flex items-center justify-center">
                         Loading data...
                     </div>
                 )}
@@ -624,20 +654,36 @@ export default function Dashboard() {
                         {
                             key: 'lastSupplier',
                             header: 'Last Purchase',
-                            width: '100px',
-                            render: (r) => {
+                            width: '160px',
+                            render: (r: Row) => {
                                 const s = r.lastSupplier;
+                                const price = r.lastPrice;
+                                const uom = r.lastUom;
                                 if (!s) return <span className="text-slate-500">-</span>;
                                 return (
                                     <div className="text-right">
                                         <div className="truncate" title={s.name || ''}>
                                             {s.name || s.id}
                                         </div>
-                                        <div className="text-xs text-slate-400 mt-0.5">{s.date ? new Date(s.date).toLocaleDateString('id-ID') : ''}</div>
+                                        <div className="text-xs text-slate-400 mt-0.5">
+                                            {s.date ? new Date(s.date).toLocaleDateString('id-ID') : ''}
+                                        </div>
+
+                                        {price !== null && price !== undefined ? (
+                                            <div className="text-sm font-semibold text-slate-800 mt-1">
+                                                {/* format price and append unit e.g. "Rp 1.000 / pcs" */}
+                                                {price.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 })}
+                                                {uom ? ` / ${uom}` : ''}
+                                            </div>
+                                        ) : (
+                                            <div className="text-xs text-slate-400 mt-1">No price</div>
+                                        )}
                                     </div>
                                 );
                             },
                         },
+
+
                         {
                             key: 'make_po',
                             header: 'Make PO',

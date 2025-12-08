@@ -2,143 +2,136 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Card } from '@/components/ui/card';
 import { useFilteredMaterialRequests } from '@/hooks/useMaterialRequestData';
-import type { MRType } from '@/hooks/useMaterialRequestData';
+import type { MRFilterParams } from '@/hooks/useMaterialRequestData';
 import type { MaterialRequest, MaterialRequestItem } from '@/types/material-request';
 
-type Filters = {
-    selectedStatus?: string | string[] | null;
-    selectedBranch?: string | null;
-    selectedType?: MRType | null;
-    start_date?: string | null;
-    end_date?: string | null;
-    required_start?: string | null;
-    required_end?: string | null;
-    selectedDepartment?: string | null;
-    selectedProject?: string | null;
-};
-
 type Props = {
-    filters?: Filters;
-    onSelectProject?: (projectName: string | null) => void;
+    filters?: Partial<MRFilterParams>;
+    onSelectProject?: (projectName: string) => void;
     maxRows?: number;
 };
 
+function formatDateIso(iso?: string | null) {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
 /**
- * ProjectDeliveryTable (simplified)
- * Columns: Project | MR count | Delivery Date
- * Delivery Date = next upcoming delivery_date (>= today) if available,
- * otherwise earliest delivery_date; else '-'
+ * ProjectDeliveryTable (NEW logic: newest delivery_date per project)
+ *
+ * - Scans filteredMRs (already filtered by dashboard filters)
+ * - For each MR -> each item:
+ *    - reads item.project (trim)
+ *    - reads item.delivery_date (if valid date)
+ * - For each project, keeps the MAX (latest) delivery_date across all items
+ * - Only includes projects that have at least one valid delivery_date
+ * - Sorts by delivery_date desc (newest first)
  */
-export default function ProjectDeliveryTable({ filters, onSelectProject, maxRows = 999 }: Props) {
+export default function ProjectDeliveryTable({ filters, onSelectProject, maxRows = 20 }: Props) {
     const { filtered: filteredMRs = [], isLoading, error } = useFilteredMaterialRequests({
-        selectedStatus: filters?.selectedStatus,
-        selectedBranch: filters?.selectedBranch,
-        selectedType: filters?.selectedType,
-        start_date: filters?.start_date,
-        end_date: filters?.end_date,
-        required_start: filters?.required_start,
-        required_end: filters?.required_end,
-        selectedDepartment: filters?.selectedDepartment,
-        selectedProject: filters?.selectedProject,
+        selectedStatus: filters?.selectedStatus ?? null,
+        selectedBranch: filters?.selectedBranch ?? null,
+        selectedType: filters?.selectedType ?? null,
+        start_date: filters?.start_date ?? null,
+        end_date: filters?.end_date ?? null,
+        required_start: filters?.required_start ?? null,
+        required_end: filters?.required_end ?? null,
+        selectedDepartment: (filters as any)?.selectedDepartment ?? null,
+        selectedProject: filters?.selectedProject ?? null,
     });
 
     const rows = useMemo(() => {
-        if (!Array.isArray(filteredMRs)) return [];
+        const map = new Map<string, string>(); // project -> iso date (max/latest)
 
-        const map = new Map<string, { count: number; dates: number[] }>();
+        (filteredMRs as MaterialRequest[]).forEach((mr) => {
+            (mr.items ?? []).forEach((it: MaterialRequestItem) => {
+                const projRaw = (it.project ?? '').toString().trim();
+                if (!projRaw) return;
 
-        for (const mr of filteredMRs as MaterialRequest[]) {
-            const items = mr.items ?? [];
-            for (const it of items as MaterialRequestItem[]) {
-                const projectName = (it.project ?? '').toString().trim();
-                if (!projectName) continue;
+                const rawDelivery = (it as any).delivery_date ?? null;
+                if (!rawDelivery) return;
 
-                const raw = (it as any).delivery_date ?? null;
-                let ts: number | null = null;
-                if (raw) {
-                    const d = new Date(raw);
-                    if (!isNaN(d.getTime())) {
-                        ts = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-                    }
+                // Try parse date
+                const dt = new Date(rawDelivery);
+                if (isNaN(dt.getTime())) return;
+
+                const iso = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).toISOString(); // normalize to date ISO
+                const cur = map.get(projRaw);
+                if (!cur) {
+                    map.set(projRaw, iso);
+                } else {
+                    // keep the latest (max)
+                    if (iso > cur) map.set(projRaw, iso);
                 }
-
-                const cur = map.get(projectName) ?? { count: 0, dates: [] };
-                cur.count += 1;
-                if (ts !== null) cur.dates.push(ts);
-                map.set(projectName, cur);
-            }
-        }
-
-        const todayTs = (() => {
-            const d = new Date();
-            return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-        })();
-
-        const arr = Array.from(map.entries()).map(([name, v]) => {
-            const datesSorted = v.dates.slice().sort((a, b) => a - b);
-            const next = datesSorted.find(d => d >= todayTs) ?? null;
-            const fallback = datesSorted.length > 0 ? datesSorted[0] : null;
-            const chosen = next ?? fallback;
-            return {
-                name,
-                count: v.count,
-                deliveryTs: chosen, // may be null
-            };
+            });
         });
 
-        // sort: most MR count first, then earliest delivery
+        // Build array only for projects that have delivery_date
+        const arr = Array.from(map.entries()).map(([project, deliveryIso]) => ({
+            project,
+            deliveryIso,
+        }));
+
+        // Sort newest first (desc)
         arr.sort((a, b) => {
-            if (b.count !== a.count) return b.count - a.count;
-            const aKey = a.deliveryTs ?? Number.MAX_SAFE_INTEGER;
-            const bKey = b.deliveryTs ?? Number.MAX_SAFE_INTEGER;
-            return aKey - bKey;
+            if (a.deliveryIso === b.deliveryIso) return a.project.localeCompare(b.project);
+            return b.deliveryIso.localeCompare(a.deliveryIso);
         });
 
         return arr.slice(0, maxRows);
     }, [filteredMRs, maxRows]);
 
-    const fmt = (ts: number | null) => {
-        if (!ts) return '-';
-        const d = new Date(ts);
-        return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-    };
+    if (isLoading) {
+        return (
+            <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-500">
+                Loading projects...
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-rose-600">
+                Failed to load projects.
+            </div>
+        );
+    }
+
+    if (rows.length === 0) {
+        return (
+            <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-500">
+                No projects with delivery date found.
+            </div>
+        );
+    }
 
     return (
-        <Card className="p-3">
-            {isLoading ? (
-                <div className="text-sm text-slate-500">Loading…</div>
-            ) : error ? (
-                <div className="text-sm text-rose-600">Gagal memuat data</div>
-            ) : rows.length === 0 ? (
-                <div className="text-sm text-slate-500">No projects found</div>
-            ) : (
-                <div className="overflow-auto max-h-[360px]">
-                    <table className="min-w-full text-sm">
-                        <thead className="bg-slate-50 sticky top-0">
-                            <tr className="text-left text-slate-600">
-                                <th className="px-3 py-2 font-medium">Project</th>
-                                <th className="px-3 py-2 font-medium w-36">Delivery Date</th>
-                            </tr>
-                        </thead>
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-medium text-slate-700">Project</div>
+                <div className="text-xs text-slate-400">Delivery Date</div>
+            </div>
 
-                        <tbody>
-                            {rows.map(r => (
-                                <tr
-                                    key={r.name}
-                                    onClick={() => onSelectProject ? onSelectProject(r.name) : undefined}
-                                    className="border-t border-slate-100 hover:bg-sky-50 cursor-pointer"
-                                    title={`Click to filter by project ${r.name}`}
-                                >
-                                    <td className="px-3 py-2 max-w-[220px] truncate">{r.name}</td>
-                                    <td className={`px-3 py-2 ${r.deliveryTs ? 'text-amber-700 font-medium' : 'text-slate-400'}`}>{fmt(r.deliveryTs)}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-        </Card>
+            <div className="divide-y max-h-[350px] overflow-auto">
+                {rows.map((r) => (
+                    <button
+                        key={r.project}
+                        onClick={() => onSelectProject?.(r.project)}
+                        className="w-full text-left py-2 px-2 hover:bg-slate-50 rounded-md flex items-center justify-between gap-4"
+                        title={r.project}
+                    >
+                        <div className="min-w-0">
+                            <div className="text-sm font-medium text-slate-800 truncate">{r.project}</div>
+                        </div>
+                        <div className="text-sm text-amber-600">
+                            {formatDateIso(r.deliveryIso)}
+                        </div>
+                    </button>
+                ))}
+            </div>
+        </div>
     );
 }
