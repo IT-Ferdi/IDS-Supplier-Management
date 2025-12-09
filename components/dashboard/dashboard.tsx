@@ -169,8 +169,8 @@ export default function Dashboard() {
             end_date: mrEnd,
             required_start: reqStart,
             required_end: reqEnd,
+            selectedBranch: selectedBranch,
         });
-
     // paging state
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState<number>(10);
@@ -266,14 +266,12 @@ export default function Dashboard() {
         return map;
     }, [transactions]);
 
-
-
     const statusesForAgg = useMemo(() => {
         if (!selectedStatus) return ['draft', 'partially ordered', 'pending'];
         return Array.isArray(selectedStatus) ? selectedStatus : [selectedStatus];
     }, [selectedStatus]);
 
-
+    // ------- FILTERED MRS FROM HOOK (general use) -------
     const { filtered: filteredMRs = [] } = useFilteredMaterialRequests({
         selectedStatus: statusesForAgg,
         selectedDepartment: selectedDept,
@@ -286,6 +284,39 @@ export default function Dashboard() {
         required_end: reqEnd,
     });
 
+    // ---------- NEW: helper to map cost_center -> branch (copy from hooks) ----------
+    const BRANCH_NAMES: { [key: string]: string } = {
+        'JKT': 'JAKARTA', 'SBY': 'SURABAYA', 'SMG': 'SEMARANG', 'MKS': 'MAKASSAR',
+        'MDN': 'MEDAN', 'JBR': 'JEMBER', 'BDL': 'LAMPUNG'
+    };
+    function costCenterToBranchLocal(costCenter?: string) {
+        const cc = (costCenter ?? '').toString().trim();
+        if (!cc) return 'Unassigned';
+        if (cc.toUpperCase() === 'SBY-PG') return 'SURABAYA-PG';
+        const code = cc.substring(0, 3).toUpperCase();
+        return BRANCH_NAMES[code] || code;
+    }
+
+    // ---------- NEW: filteredMRs specifically for table ----------
+    const filteredMRsForTable = useMemo(() => {
+        // If no selectedBranch, just return filteredMRs from hook
+        if (!selectedBranch) return filteredMRs as MaterialRequest[];
+
+        const sel = (selectedBranch ?? '').toString().trim().toUpperCase();
+
+        // Keep only MRs where mapped branch equals selectedBranch (case-insensitive)
+        const list = (filteredMRs || []).filter(mr => {
+            const branch = (costCenterToBranchLocal(mr.cost_center) ?? '').toString().trim().toUpperCase();
+            return branch === sel;
+        });
+
+        // debug - remove in production
+        // console.debug('[DBG] filteredMRsForTable length:', list.length, 'selectedBranch:', selectedBranch);
+
+        return list;
+    }, [filteredMRs, selectedBranch]);
+
+    // ---------- Use filteredMRsForTable (instead of filteredMRs) for table aggregates ----------
     const aggByItem = useMemo(() => {
         const ALLOWED = new Set(['draft', 'partially ordered', 'pending']);
         const map = new Map<string, { asked: number; ordered: number; received: number }>();
@@ -300,7 +331,7 @@ export default function Dashboard() {
             });
         };
 
-        (filteredMRs as MaterialRequest[]).forEach((mr) => {
+        (filteredMRsForTable as MaterialRequest[]).forEach((mr) => {
             const st = (mr.status ?? '').toLowerCase();
             if (!ALLOWED.has(st)) return;
             (mr.items ?? []).forEach((it: MaterialRequestItem) => {
@@ -313,13 +344,13 @@ export default function Dashboard() {
         });
 
         return map;
-    }, [filteredMRs]);
+    }, [filteredMRsForTable]);
 
-    // compute per-item PO status summary from filteredMRs:
+    // compute per-item PO status summary from filteredMRsForTable:
     // { anyTrue: boolean, anyFalse: boolean, anyMissing: boolean }
     const poStatsByItem = useMemo(() => {
         const map = new Map<string, { anyTrue: boolean; anyFalse: boolean; anyMissing: boolean }>();
-        (filteredMRs as MaterialRequest[]).forEach((mr) => {
+        (filteredMRsForTable as MaterialRequest[]).forEach((mr) => {
             (mr.items ?? []).forEach((it: MaterialRequestItem) => {
                 const code = (it.item_code ?? '').toString();
                 if (!code) return;
@@ -332,12 +363,12 @@ export default function Dashboard() {
             });
         });
         return map;
-    }, [filteredMRs]);
+    }, [filteredMRsForTable]);
 
     const isPoByItem = useMemo(() => {
         const map = new Map<string, boolean>();
 
-        (filteredMRs as MaterialRequest[]).forEach((mr) => {
+        (filteredMRsForTable as MaterialRequest[]).forEach((mr) => {
             (mr.items ?? []).forEach((it: MaterialRequestItem) => {
                 const code = it.item_code ?? '';
                 if (!code) return;
@@ -348,7 +379,7 @@ export default function Dashboard() {
         });
 
         return map;
-    }, [filteredMRs]);
+    }, [filteredMRsForTable]);
 
     const rows: Row[] = useMemo(() => {
         return (items as ItemRow[]).map((it) => {
@@ -444,7 +475,6 @@ export default function Dashboard() {
 
         queryClient.invalidateQueries({ queryKey: ['material-request', 'list'] });
     };
-
 
     // support both react-query names: isPending (some wrappers) or isLoading (default)
     const mutationPending = (makePoMutation as any)?.isPending || (makePoMutation as any)?.isLoading || false;

@@ -565,9 +565,10 @@ export function useMaterialRequestBranchSummary(params?: {
     end_date?: string | null;
     required_start?: string | null;
     required_end?: string | null;
+    selectedBranch?: string | null;
 }) {
     const { data: mrs = [], isLoading, error } = useMaterialRequestData();
-    const { selectedStatus, selectedProject, selectedType, start_date, end_date, required_start, required_end } = params ?? {};
+    const { selectedStatus, selectedProject, selectedType, start_date, end_date, required_start, required_end, selectedBranch } = params ?? {};
 
     const normalizedStatuses = useMemo(() => {
         if (!selectedStatus) return null;
@@ -627,6 +628,11 @@ export function useMaterialRequestBranchSummary(params?: {
                 if (mrType !== selectedType) return;
             }
 
+            if (selectedBranch) {
+                const branch = costCenterToBranch(mr.cost_center);
+                if (branch !== selectedBranch) return;
+            }
+
             const branch = costCenterToBranch(mr.cost_center);
             map.set(branch, (map.get(branch) ?? 0) + 1);
         });
@@ -634,7 +640,7 @@ export function useMaterialRequestBranchSummary(params?: {
         const arr = Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
         const total = arr.reduce((s, x) => s + x.count, 0);
         return { data: arr, total };
-    }, [mrs, normalizedStatuses, normalizedProjects, selectedType, startTime, endTime, reqStartTime, reqEndTime]);
+    }, [mrs, normalizedStatuses, normalizedProjects, selectedType, startTime, endTime, reqStartTime, reqEndTime, selectedBranch]);
 
     return { isLoading, error, ...result };
 }

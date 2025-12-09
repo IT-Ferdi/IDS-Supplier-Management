@@ -53,9 +53,11 @@ export default function ProjectDeliveryTable({ filters, onSelectProject, maxRows
                 const dt = new Date(raw);
                 if (isNaN(dt.getTime())) return;
 
+                // normalize to date-only ISO (YYYY-MM-DDTHH:MM:SS.sssZ won't hurt for comparison)
                 const iso = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).toISOString();
                 const cur = map.get(proj);
 
+                // keep the latest (max) delivery date per project — note: this kept your previous logic
                 if (!cur || iso > cur) {
                     map.set(proj, iso);
                 }
@@ -73,17 +75,22 @@ export default function ProjectDeliveryTable({ filters, onSelectProject, maxRows
             arr = arr.filter((r) => r.project.toLowerCase().includes(q));
         }
 
-        // Sort newest first
-        arr.sort((a, b) => b.deliveryIso.localeCompare(a.deliveryIso));
+        // Sort: earliest (closest) first -> ascending by deliveryIso
+        arr.sort((a, b) => {
+            if (!a.deliveryIso && !b.deliveryIso) return a.project.localeCompare(b.project);
+            if (!a.deliveryIso) return 1;
+            if (!b.deliveryIso) return -1;
+            return a.deliveryIso.localeCompare(b.deliveryIso);
+        });
 
         return arr;
     }, [filteredMRs, search]);
 
     const totalRows = rows.length;
-    const totalPages = Math.ceil(totalRows / pageSize);
+    const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
 
     // clamp page
-    const currentPage = Math.min(page, totalPages || 1);
+    const currentPage = Math.min(Math.max(1, page), totalPages);
 
     const pagedRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 

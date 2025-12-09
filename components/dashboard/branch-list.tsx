@@ -18,11 +18,16 @@ export default function BranchList({
     onBranchClick?: (name: string | null) => void;
     title?: string;
 }) {
-    // filter hanya yang count > 0
+    // filter hanya yang count > 0 (tetap seperti Anda definisikan)
     const visible = Array.isArray(data) ? data.filter(d => Number(d.count) > 0) : [];
 
     // jika setelah filter tidak ada yang tampil, return null
     if (visible.length === 0 || total === 0) return null;
+
+    // Jika ada selectedBranch, displayTotal hanya nilai branch yg dipilih
+    const displayTotal = selectedBranch
+        ? (data.find(d => d.name === selectedBranch)?.count ?? 0)
+        : total;
 
     const COLORS = ['#10B981', '#60A5FA', '#F59E0B', '#EF4444', '#7C3AED', '#06B6D4', '#F97316', '#0891B2'];
 
@@ -30,13 +35,18 @@ export default function BranchList({
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
-                <div className="text-xs text-slate-500">Total MR: <span className="font-medium text-slate-700">{total}</span></div>
+                <div className="text-xs text-slate-500">Total MR: <span className="font-medium text-slate-700">{displayTotal}</span></div>
             </div>
 
             <div className="space-y-2 max-h-84 overflow-y-auto">
                 {visible.map((d, idx) => {
                     const active = selectedBranch === d.name;
                     const color = COLORS[idx % COLORS.length];
+
+                    // Jika selectedBranch ada: hanya tampilkan nilai pada branch yg dipilih,
+                    // sisanya tampilkan 0 (agar tidak ambiguous)
+                    const countToShow = selectedBranch ? (d.name === selectedBranch ? d.count : 0) : d.count;
+
                     return (
                         <button
                             key={d.name}
@@ -57,7 +67,7 @@ export default function BranchList({
                             </div>
 
                             <div className="flex items-center gap-2">
-                                <div className="text-sm font-semibold text-slate-700">{d.count}</div>
+                                <div className="text-sm font-semibold text-slate-700">{countToShow}</div>
                             </div>
                         </button>
                     );
