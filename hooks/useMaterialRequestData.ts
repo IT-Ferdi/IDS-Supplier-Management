@@ -51,6 +51,21 @@ function costCenterToBranch(costCenter?: string) {
     return BRANCH_NAMES[code] || code;
 }
 
+function toDateOnlyTS(raw: any) {
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return null;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/**
+ * small helper to normalize strings for comparison
+ */
+function normalize(s?: string | null) {
+    if (s === null || s === undefined) return '';
+    return String(s).toLowerCase().trim();
+}
+
 /**
  * project type classifier (shared logic)
  */
@@ -91,7 +106,7 @@ export type MRFilterParams = {
     start_date?: string | null;        // transaction_date start
     end_date?: string | null;          // transaction_date end
     required_start?: string | null;    // required_by start
-    required_end?: string | null;      // required_by end
+    required_end?: string | null;
     selectedDepartment?: string | null;
     selectedCostCenter?: string | null;
     selectedProject?: string | null;
@@ -128,42 +143,49 @@ export function useFilteredMaterialRequests(params: MRFilterParams = {}) {
 
     const filtered = useMemo(() => {
         if (!Array.isArray(mrs)) return [];
+        const normProject = normalize(selectedProject ?? null);
+        const normDept = normalize(selectedDepartment ?? null);
+        const normCostCenter = normalize(selectedCostCenter ?? null);
+
         return mrs.filter((mr) => {
+            // selectedProject (item-level) - use includes on normalized strings
+            if (normProject) {
+                const ok = Array.isArray(mr.items) && mr.items.some(it => normalize(it.project).includes(normProject));
+                if (!ok) return false;
+            }
+
             // status
             if (normalizedStatuses && normalizedStatuses.length > 0) {
                 const st = (mr.status ?? '').toString().toLowerCase();
                 if (!normalizedStatuses.includes(st)) return false;
             }
 
-            // transaction_date range
-            if ((startTime || endTime) && mr.transaction_date) {
-                const t = new Date(mr.transaction_date).getTime();
+            if ((startTime || endTime)) {
+                const t = toDateOnlyTS(mr.transaction_date);
+                if (t === null) return false;
+
                 if (startTime && t < startTime) return false;
                 if (endTime && t > endTime) return false;
             }
 
             // required_by range
-            if ((reqStartTime || reqEndTime) && mr.required_by) {
-                const r = new Date(mr.required_by).getTime();
-                if (reqStartTime && r < reqStartTime) return false;
-                if (reqEndTime && r > reqEndTime) return false;
+            if ((reqStartTime || reqEndTime)) {
+                const t = toDateOnlyTS(mr.required_by);
+                if (t === null) return false;
+
+                if (reqStartTime && t < reqStartTime) return false;
+                if (reqEndTime && t > reqEndTime) return false;
             }
 
             // selectedDepartment (item-level)
-            if (selectedDepartment) {
-                const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.department ?? '') as string).toLowerCase().includes(selectedDepartment.toLowerCase()));
+            if (normDept) {
+                const ok = Array.isArray(mr.items) && mr.items.some(it => normalize(it.department).includes(normDept));
                 if (!ok) return false;
             }
 
             // selectedCostCenter (item-level)
-            if (selectedCostCenter) {
-                const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.cost_center ?? '') as string).toLowerCase().includes(selectedCostCenter.toLowerCase()));
-                if (!ok) return false;
-            }
-
-            // selectedProject (item-level)
-            if (selectedProject) {
-                const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.project ?? '') as string).toLowerCase().includes(selectedProject.toLowerCase()));
+            if (normCostCenter) {
+                const ok = Array.isArray(mr.items) && mr.items.some(it => normalize(it.cost_center).includes(normCostCenter));
                 if (!ok) return false;
             }
 
@@ -238,16 +260,20 @@ export function useMaterialRequestProjectList(params?: {
                 if (mrType !== selectedType) return;
             }
 
-            if ((startTime || endTime) && mr.transaction_date) {
-                const t = new Date(mr.transaction_date).getTime();
-                if (startTime && t < startTime) return;
-                if (endTime && t > endTime) return;
+            if ((startTime || endTime)) {
+                const t = toDateOnlyTS(mr.transaction_date);
+                if (t === null) return false;
+
+                if (startTime && t < startTime) return false;
+                if (endTime && t > endTime) return false;
             }
 
-            if ((reqStartTime || reqEndTime) && mr.required_by) {
-                const r = new Date(mr.required_by).getTime();
-                if (reqStartTime && r < reqStartTime) return;
-                if (reqEndTime && r > reqEndTime) return;
+            if ((reqStartTime || reqEndTime)) {
+                const t = toDateOnlyTS(mr.required_by);
+                if (t === null) return false;
+
+                if (reqStartTime && t < reqStartTime) return false;
+                if (reqEndTime && t > reqEndTime) return false;
             }
 
             (mr.items || []).forEach((it: MaterialRequestItem) => {
@@ -344,21 +370,26 @@ export function useMaterialRequestDepartmentSummary(params?: {
                 if (mrType !== selectedType) return;
             }
 
-            if ((startTime || endTime) && mr.transaction_date) {
-                const t = new Date(mr.transaction_date).getTime();
-                if (startTime && t < startTime) return;
-                if (endTime && t > endTime) return;
+            if ((startTime || endTime)) {
+                const t = toDateOnlyTS(mr.transaction_date);
+                if (t === null) return false;
+
+                if (startTime && t < startTime) return false;
+                if (endTime && t > endTime) return false;
             }
 
-            if ((reqStartTime || reqEndTime) && mr.required_by) {
-                const r = new Date(mr.required_by).getTime();
-                if (reqStartTime && r < reqStartTime) return;
-                if (reqEndTime && r > reqEndTime) return;
+            if ((reqStartTime || reqEndTime)) {
+                const t = toDateOnlyTS(mr.required_by);
+                if (t === null) return false;
+
+                if (reqStartTime && t < reqStartTime) return false;
+                if (reqEndTime && t > reqEndTime) return false;
             }
 
             if (selectedProject) {
-                const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.project ?? '') as string).toLowerCase().includes(selectedProject.toLowerCase()));
-                if (!ok) return;
+                const ok = Array.isArray(mr.items) &&
+                    mr.items.some(it => it.project === selectedProject);
+                if (!ok) return false;
             }
 
             const seen = new Set<string>();
@@ -436,6 +467,13 @@ export function useMaterialRequestSummary(params?: {
         let pending = 0;
 
         mrs.forEach((mr) => {
+            if (selectedProject) {
+                const normSel = normalize(selectedProject);
+                const ok = Array.isArray(mr.items) &&
+                    mr.items.some(it => normalize(it.project).startsWith(normSel));
+                if (!ok) return false;
+            }
+
             if (normalizedStatuses && normalizedStatuses.length > 0) {
                 const st = (mr.status ?? '').toString().toLowerCase();
                 if (!normalizedStatuses.includes(st)) return;
@@ -451,25 +489,24 @@ export function useMaterialRequestSummary(params?: {
                 if (mrType !== selectedType) return;
             }
 
-            if ((startTime || endTime) && mr.transaction_date) {
-                const t = new Date(mr.transaction_date).getTime();
-                if (startTime && t < startTime) return;
-                if (endTime && t > endTime) return;
+            if ((startTime || endTime)) {
+                const t = toDateOnlyTS(mr.transaction_date);
+                if (t === null) return false;
+
+                if (startTime && t < startTime) return false;
+                if (endTime && t > endTime) return false;
             }
 
-            if ((reqStartTime || reqEndTime) && mr.required_by) {
-                const r = new Date(mr.required_by).getTime();
-                if (reqStartTime && r < reqStartTime) return;
-                if (reqEndTime && r > reqEndTime) return;
+            if ((reqStartTime || reqEndTime)) {
+                const t = toDateOnlyTS(mr.required_by);
+                if (t === null) return false;
+
+                if (reqStartTime && t < reqStartTime) return false;
+                if (reqEndTime && t > reqEndTime) return false;
             }
 
             if (selectedDepartment) {
-                const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.department ?? '') as string).toLowerCase().includes(selectedDepartment.toLowerCase()));
-                if (!ok) return;
-            }
-
-            if (selectedProject) {
-                const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.project ?? '') as string).toLowerCase().includes(selectedProject.toLowerCase()));
+                const ok = Array.isArray(mr.items) && mr.items.some(it => normalize(it.department).includes(normalize(selectedDepartment)));
                 if (!ok) return;
             }
 
@@ -561,21 +598,25 @@ export function useMaterialRequestBranchSummary(params?: {
                 if (!normalizedStatuses.includes(st)) return;
             }
 
-            if ((startTime || endTime) && mr.transaction_date) {
-                const t = new Date(mr.transaction_date).getTime();
-                if (startTime && t < startTime) return;
-                if (endTime && t > endTime) return;
+            if ((startTime || endTime)) {
+                const t = toDateOnlyTS(mr.transaction_date);
+                if (t === null) return false;
+
+                if (startTime && t < startTime) return false;
+                if (endTime && t > endTime) return false;
             }
 
-            if ((reqStartTime || reqEndTime) && mr.required_by) {
-                const r = new Date(mr.required_by).getTime();
-                if (reqStartTime && r < reqStartTime) return;
-                if (reqEndTime && r > reqEndTime) return;
+            if ((reqStartTime || reqEndTime)) {
+                const t = toDateOnlyTS(mr.required_by);
+                if (t === null) return false;
+
+                if (reqStartTime && t < reqStartTime) return false;
+                if (reqEndTime && t > reqEndTime) return false;
             }
 
             if (normalizedProjects && normalizedProjects.length > 0) {
                 const ok = Array.isArray(mr.items) && mr.items.some(it => {
-                    const p = ((it.project ?? '') as string).toLowerCase();
+                    const p = normalize(it.project);
                     return normalizedProjects.some(np => p.includes(np));
                 });
                 if (!ok) return;
@@ -661,21 +702,26 @@ export function useMaterialRequestTypeSummary(params?: {
                 if (branch !== selectedBranch) return;
             }
 
-            if ((startTime || endTime) && mr.transaction_date) {
-                const t = new Date(mr.transaction_date).getTime();
-                if (startTime && t < startTime) return;
-                if (endTime && t > endTime) return;
+            if ((startTime || endTime)) {
+                const t = toDateOnlyTS(mr.transaction_date);
+                if (t === null) return false;
+
+                if (startTime && t < startTime) return false;
+                if (endTime && t > endTime) return false;
             }
 
-            if ((reqStartTime || reqEndTime) && mr.required_by) {
-                const r = new Date(mr.required_by).getTime();
-                if (reqStartTime && r < reqStartTime) return;
-                if (reqEndTime && r > reqEndTime) return;
+            if ((reqStartTime || reqEndTime)) {
+                const t = toDateOnlyTS(mr.required_by);
+                if (t === null) return false;
+
+                if (reqStartTime && t < reqStartTime) return false;
+                if (reqEndTime && t > reqEndTime) return false;
             }
 
             if (selectedProject) {
-                const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.project ?? '') as string).toLowerCase().includes(selectedProject.toLowerCase()));
-                if (!ok) return;
+                const ok = Array.isArray(mr.items) &&
+                    mr.items.some(it => it.project === selectedProject);
+                if (!ok) return false;
             }
 
             let assignedType: 'Project' | 'Operational' | 'Stock' | 'Lain-lain' = 'Lain-lain';
@@ -728,7 +774,22 @@ export type MRDateRangeParams = {
     selectedDepartment?: string | null;
     date_field?: 'required_by' | 'transaction_date';
 };
+/**
+ * Format an UTC-midnight timestamp (ms) into YYYY-MM-DD string (UTC-based).
+ * If ts is null/undefined returns ''.
+ */
+function formatDateISOFromTS(ts: number | null | undefined): string {
+    if (ts === null || ts === undefined) return '';
+    const d = new Date(ts);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
 
+/**
+ * MR Date range hook (REVISED)
+ */
 export function useMaterialRequestDateRange(params?: MRDateRangeParams) {
     const { data: mrs = [], isLoading, error } = useMaterialRequestData();
     const {
@@ -748,8 +809,9 @@ export function useMaterialRequestDateRange(params?: MRDateRangeParams) {
     }, [selectedStatus]);
 
     const result = useMemo(() => {
+        // default -> today (use UTC date to avoid timezone shift)
         const today = new Date();
-        const isoToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString().slice(0, 10);
+        const isoToday = formatDateISOFromTS(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
 
         if (!Array.isArray(mrs) || mrs.length === 0) {
             return { minDate: isoToday, maxDate: isoToday };
@@ -775,32 +837,48 @@ export function useMaterialRequestDateRange(params?: MRDateRangeParams) {
             }
 
             if (selectedDepartment) {
-                const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.department ?? '') as string).toLowerCase().includes(selectedDepartment.toLowerCase()));
+                const ok = Array.isArray(mr.items) && mr.items.some(it => normalize(it.department).includes(normalize(selectedDepartment)));
                 if (!ok) continue;
             }
 
             if (selectedProject) {
-                const ok = Array.isArray(mr.items) && mr.items.some(it => ((it.project ?? '') as string).toLowerCase().includes(selectedProject.toLowerCase()));
+                const ok = Array.isArray(mr.items) &&
+                    mr.items.some(it => it.project === selectedProject);
                 if (!ok) continue;
             }
 
             const raw = (mr as any)[date_field];
             if (!raw) continue;
-            const d = new Date(raw);
-            if (isNaN(d.getTime())) continue;
-            const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+            // use toDateOnlyTS to normalize to UTC-midnight ms
+            const t = toDateOnlyTS(raw);
+            if (t === null) continue;
 
             if (minTs === null || t < minTs) minTs = t;
             if (maxTs === null || t > maxTs) maxTs = t;
         }
 
-        const isoMin = minTs ? new Date(minTs).toISOString().slice(0, 10) : isoToday;
-        const isoMax = maxTs ? new Date(maxTs).toISOString().slice(0, 10) : isoToday;
+        function addOneDay(iso: string) {
+            const d = new Date(iso);
+            d.setDate(d.getDate() + 1);
+            return d.toISOString().slice(0, 10);
+        }
+
+        const isoMinRaw = minTs ? new Date(minTs).toISOString().slice(0, 10) : isoToday;
+        const isoMaxRaw = maxTs ? new Date(maxTs).toISOString().slice(0, 10) : isoToday;
+
+        // FIX: tambahkan +1 hari agar tidak telat 1 hari karena shift UTC → lokal
+        const isoMin = addOneDay(isoMinRaw);
+        const isoMax = addOneDay(isoMaxRaw);
+
+        return { minDate: isoMin, maxDate: isoMax };
+
         return { minDate: isoMin, maxDate: isoMax };
     }, [mrs, normalizedStatuses, selectedBranch, selectedProject, selectedType, selectedDepartment, date_field]);
 
     return { minDate: result.minDate, maxDate: result.maxDate, isLoading, error };
 }
+
 
 async function apiMakePo(payload: MakePoPayload) {
     const res = await fetch('/api/material-request/make-po', {
@@ -836,9 +914,7 @@ export function useMakePo() {
             console.error('useMakePo error:', err);
         },
 
-
     });
 
     return mutation;
 }
-

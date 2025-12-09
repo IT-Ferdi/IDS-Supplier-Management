@@ -445,6 +445,7 @@ export default function Dashboard() {
         queryClient.invalidateQueries({ queryKey: ['material-request', 'list'] });
     };
 
+
     // support both react-query names: isPending (some wrappers) or isLoading (default)
     const mutationPending = (makePoMutation as any)?.isPending || (makePoMutation as any)?.isLoading || false;
 
@@ -632,7 +633,7 @@ export default function Dashboard() {
                                     selectedProject,
                                 }}
                                 onSelectProject={(p) => setSelectedProject((prev) => (prev === p ? null : p))}
-                                maxRows={12}
+                                maxRows={20}
                             />
                         </div>
                     </>

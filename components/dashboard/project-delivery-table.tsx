@@ -1,7 +1,7 @@
 // components/dashboard/project-delivery-table.tsx
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useFilteredMaterialRequests } from '@/hooks/useMaterialRequestData';
 import type { MRFilterParams } from '@/hooks/useMaterialRequestData';
 import type { MaterialRequest, MaterialRequestItem } from '@/types/material-request';
@@ -19,18 +19,7 @@ function formatDateIso(iso?: string | null) {
     return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-/**
- * ProjectDeliveryTable (NEW logic: newest delivery_date per project)
- *
- * - Scans filteredMRs (already filtered by dashboard filters)
- * - For each MR -> each item:
- *    - reads item.project (trim)
- *    - reads item.delivery_date (if valid date)
- * - For each project, keeps the MAX (latest) delivery_date across all items
- * - Only includes projects that have at least one valid delivery_date
- * - Sorts by delivery_date desc (newest first)
- */
-export default function ProjectDeliveryTable({ filters, onSelectProject, maxRows = 20 }: Props) {
+export default function ProjectDeliveryTable({ filters, onSelectProject, maxRows = 999 }: Props) {
     const { filtered: filteredMRs = [], isLoading, error } = useFilteredMaterialRequests({
         selectedStatus: filters?.selectedStatus ?? null,
         selectedBranch: filters?.selectedBranch ?? null,
@@ -39,50 +28,64 @@ export default function ProjectDeliveryTable({ filters, onSelectProject, maxRows
         end_date: filters?.end_date ?? null,
         required_start: filters?.required_start ?? null,
         required_end: filters?.required_end ?? null,
-        selectedDepartment: (filters as any)?.selectedDepartment ?? null,
+        selectedDepartment: filters?.selectedDepartment ?? null,
         selectedProject: filters?.selectedProject ?? null,
     });
 
+    // 🔍 Search state
+    const [search, setSearch] = useState('');
+
+    // 📄 Pagination
+    const [page, setPage] = useState(1);
+    const pageSize = 10; // fixed page size, can be made adjustable
+
     const rows = useMemo(() => {
-        const map = new Map<string, string>(); // project -> iso date (max/latest)
+        const map = new Map<string, string>(); // project -> latest date
 
         (filteredMRs as MaterialRequest[]).forEach((mr) => {
             (mr.items ?? []).forEach((it: MaterialRequestItem) => {
-                const projRaw = (it.project ?? '').toString().trim();
-                if (!projRaw) return;
+                const proj = (it.project ?? '').toString().trim();
+                if (!proj) return;
 
-                const rawDelivery = (it as any).delivery_date ?? null;
-                if (!rawDelivery) return;
+                const raw = (it as any).delivery_date ?? null;
+                if (!raw) return;
 
-                // Try parse date
-                const dt = new Date(rawDelivery);
+                const dt = new Date(raw);
                 if (isNaN(dt.getTime())) return;
 
-                const iso = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).toISOString(); // normalize to date ISO
-                const cur = map.get(projRaw);
-                if (!cur) {
-                    map.set(projRaw, iso);
-                } else {
-                    // keep the latest (max)
-                    if (iso > cur) map.set(projRaw, iso);
+                const iso = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).toISOString();
+                const cur = map.get(proj);
+
+                if (!cur || iso > cur) {
+                    map.set(proj, iso);
                 }
             });
         });
 
-        // Build array only for projects that have delivery_date
-        const arr = Array.from(map.entries()).map(([project, deliveryIso]) => ({
+        let arr = Array.from(map.entries()).map(([project, deliveryIso]) => ({
             project,
             deliveryIso,
         }));
 
-        // Sort newest first (desc)
-        arr.sort((a, b) => {
-            if (a.deliveryIso === b.deliveryIso) return a.project.localeCompare(b.project);
-            return b.deliveryIso.localeCompare(a.deliveryIso);
-        });
+        // 🔍 Search filter
+        if (search.trim() !== '') {
+            const q = search.toLowerCase();
+            arr = arr.filter((r) => r.project.toLowerCase().includes(q));
+        }
 
-        return arr.slice(0, maxRows);
-    }, [filteredMRs, maxRows]);
+        // Sort newest first
+        arr.sort((a, b) => b.deliveryIso.localeCompare(a.deliveryIso));
+
+        return arr;
+    }, [filteredMRs, search]);
+
+    const totalRows = rows.length;
+    const totalPages = Math.ceil(totalRows / pageSize);
+
+    // clamp page
+    const currentPage = Math.min(page, totalPages || 1);
+
+    const pagedRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
     if (isLoading) {
         return (
@@ -111,12 +114,23 @@ export default function ProjectDeliveryTable({ filters, onSelectProject, maxRows
     return (
         <div className="rounded-xl border border-slate-200 bg-white p-3">
             <div className="flex items-center justify-between mb-2">
-                <div className="text-sm font-medium text-slate-700">Project</div>
-                <div className="text-xs text-slate-400">Delivery Date</div>
+                <div className="text-sm font-medium text-slate-700">Project & Due Date</div>
             </div>
+            {/* SEARCH */}
+            <input
+                type="text"
+                value={search}
+                onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                }}
+                placeholder="Search Project..."
+                className="w-full mb-3 px-2 py-1.5 border rounded-md text-sm"
+            />
 
-            <div className="divide-y max-h-[350px] overflow-auto">
-                {rows.map((r) => (
+            {/* TABLE LIST */}
+            <div className="divide-y max-h-[260px] overflow-auto">
+                {pagedRows.map((r) => (
                     <button
                         key={r.project}
                         onClick={() => onSelectProject?.(r.project)}
@@ -131,6 +145,31 @@ export default function ProjectDeliveryTable({ filters, onSelectProject, maxRows
                         </div>
                     </button>
                 ))}
+            </div>
+
+            {/* PAGINATION */}
+            <div className="flex items-center justify-between mt-3 text-sm">
+                <div className="text-slate-500">
+                    Page {currentPage} / {totalPages || 1}
+                </div>
+
+                <div className="flex gap-2">
+                    <button
+                        disabled={currentPage <= 1}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        className="px-2 py-1 border rounded disabled:opacity-40"
+                    >
+                        Prev
+                    </button>
+
+                    <button
+                        disabled={currentPage >= totalPages}
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        className="px-2 py-1 border rounded disabled:opacity-40"
+                    >
+                        Next
+                    </button>
+                </div>
             </div>
         </div>
     );
