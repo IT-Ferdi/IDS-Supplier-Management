@@ -171,6 +171,7 @@ export default function Dashboard() {
             required_end: reqEnd,
             selectedBranch: selectedBranch,
         });
+
     // paging state
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState<number>(10);
@@ -500,67 +501,94 @@ export default function Dashboard() {
             </div>
             <div className="text-sm text-slate-600">Selected: <span className="font-medium ml-1">{makePoSet.size}</span></div>
             <button
+                // ganti isi onClick handler tombol "Get Latest PO" dengan kode ini
                 onClick={async () => {
                     const itemCodes = Array.from(makePoSet);
                     if (itemCodes.length === 0) return;
 
-                    // build simple po_meta automatically (you can replace these with real inputs if available)
                     const now = new Date();
                     const poName = `PO-AUTO-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${now.getTime()}`;
-                    const poMeta = {
-                        po_name: poName,
-                        supplier: '', // you can set supplier here or prompt user
-                        transaction_date: now.toISOString().slice(0, 10),
-                    };
+                    const poMeta = { po_name: poName, supplier: '', transaction_date: now.toISOString().slice(0, 10) };
 
                     try {
-                        // call API
                         await makePoMutation.mutateAsync({ item_codes: itemCodes, po_meta: poMeta });
 
-                        // refresh data
+                        // refetch and read fresh data
                         await queryClient.invalidateQueries({ queryKey: ['material-request', 'list'] });
-                        // refetch active queries to be sure
                         await queryClient.refetchQueries({ queryKey: ['material-request', 'list'], type: 'active' });
-
-                        // fetch fresh data from cache (after refetch)
                         const freshMrs = (queryClient.getQueryData(['material-request', 'list']) ?? mrs) as MaterialRequest[];
 
-                        // build modal payload: per MR that has items with item_codes, collect po_detail
-                        const modalEntries: { mr_name: string; item_code: string; po_detail: any[] }[] = [];
-
+                        // Build outstandingMap and modalEntries (filter PO details to relevant item-code)
                         const codesSet = new Set(itemCodes.map(c => (c || '').toString().toLowerCase()));
+                        const outstandingMap = new Map<string, { asked: number; total_po: number }>();
+                        const modalEntries: { mr_name: string; item_code: string; po_detail: any[] }[] = [];
 
                         (freshMrs || []).forEach((mr) => {
                             (mr.items || []).forEach((it: MaterialRequestItem) => {
                                 const code = (it.item_code ?? '').toString();
                                 if (!code) return;
-                                if (!codesSet.has(code.toLowerCase())) return;
+                                const lower = code.toLowerCase();
 
-                                // normalize po_detail to array
-                                const poDetailArr = Array.isArray((it as any).po_detail)
-                                    ? (it as any).po_detail
-                                    : ((it as any).po_detail ? [(it as any).po_detail] : []);
+                                // accumulate asked & qty_total_po for outstanding calculation
+                                const qty = Number(it.qty ?? 0);
+                                const totPo = Number(it.qty_total_po ?? it.ordered_qty ?? 0);
+                                const cur = outstandingMap.get(lower) ?? { asked: 0, total_po: 0 };
+                                outstandingMap.set(lower, { asked: cur.asked + qty, total_po: cur.total_po + totPo });
+
+                                if (!codesSet.has(lower)) return;
+
+                                // normalize po_detail to array defensively
+                                const raw = (it as any).po_detail;
+                                const arr: any[] = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+
+                                // try to filter po_detail to only entries that belong to this item
+                                const pdGetCode = (pd: any) => {
+                                    if (!pd) return '';
+                                    return (pd.item_code ?? pd.code ?? pd.item ?? pd.item_id ?? '').toString().toLowerCase();
+                                };
+                                const anyDetailHasCode = arr.some(pd => !!pdGetCode(pd));
+                                const filteredPoDetails = anyDetailHasCode ? arr.filter(pd => pdGetCode(pd) === lower) : arr;
 
                                 modalEntries.push({
                                     mr_name: mr.name ?? '',
                                     item_code: code,
-                                    po_detail: poDetailArr,
+                                    po_detail: filteredPoDetails,
                                 });
                             });
                         });
 
-                        // Set modal data and open
+                        // Build new selected set: keep only codes that still outstanding (asked > total_po)
+                        const newSelected = new Set<string>();
+                        itemCodes.forEach((c) => {
+                            const lower = (c || '').toString().toLowerCase();
+                            const st = outstandingMap.get(lower);
+                            const remaining = st ? (st.asked - st.total_po) : 0;
+                            if (remaining > 0) newSelected.add(c);
+                        });
+
+                        // Patch react-query cache to reflect new qty_total_po & is_po based on po_detail (client-only)
+                        const patchedMrs = (freshMrs || []).map((mr) => ({
+                            ...mr,
+                            items: (mr.items || []).map((it: MaterialRequestItem) => {
+                                const raw = (it as any).po_detail;
+                                const arr: any[] = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+                                const totPoFromPoDetails = arr.reduce((s: number, pd: any) => s + (Number(pd?.qty ?? 0) || 0), 0);
+                                const newIsPo = totPoFromPoDetails > 0 ? true : (it.is_po === true);
+                                const computedQtyTotalPo = totPoFromPoDetails > 0 ? totPoFromPoDetails : Number(it.qty_total_po ?? it.ordered_qty ?? 0);
+                                return { ...it, is_po: newIsPo, qty_total_po: computedQtyTotalPo };
+                            })
+                        }));
+                        queryClient.setQueryData(['material-request', 'list'], patchedMrs);
+
+                        // show modal and update UI selection
                         setPoModalData(modalEntries);
                         setPoModalOpen(true);
-
-                        // clear selection on success
-                        setMakePoSet(new Set());
-                        console.log('PO updated:', itemCodes);
+                        setMakePoSet(newSelected);
                     } catch (err) {
                         console.error('Make PO error:', err);
-                        // optionally show toast
                     }
                 }}
+
                 disabled={mutationPending}
                 className="rounded-md bg-sky-600 text-white px-3 py-1 text-sm hover:bg-sky-700 disabled:opacity-60"
             >
@@ -721,8 +749,10 @@ export default function Dashboard() {
                             width: '100px',
                             className: 'text-center',
                             render: (r: Row) => {
-                                const alreadyPo = (r as any).isPo === true;
-                                const checked = alreadyPo ? true : makePoSet.has(r.id);
+                                // --- use isFullySatisfied for checked/disabled and styling ---
+                                const isFullySatisfied = ((r as Row).asked ?? 0) <= ((r as Row).ordered ?? 0);
+                                const checked = isFullySatisfied ? true : makePoSet.has(r.id);
+                                const disabled = isFullySatisfied;
 
                                 return (
                                     <div
@@ -733,12 +763,12 @@ export default function Dashboard() {
                                         <input
                                             type="checkbox"
                                             checked={checked}
-                                            disabled={alreadyPo}            // lock checkbox if already PO
+                                            disabled={disabled}
                                             onClick={(e) => e.stopPropagation()}
                                             onMouseDown={(e) => e.stopPropagation()}
                                             onChange={(e) => {
                                                 e.stopPropagation();
-                                                if (alreadyPo) return;       // safety
+                                                if (disabled) return;
                                                 setMakePoSet(prev => {
                                                     const s = new Set(prev);
                                                     if (s.has(r.id)) s.delete(r.id);
@@ -746,8 +776,7 @@ export default function Dashboard() {
                                                     return s;
                                                 });
                                             }}
-                                            className={`h-5 w-5 rounded border-slate-300 
-                        ${alreadyPo ? 'text-green-500 opacity-60 cursor-not-allowed' : 'text-sky-600'}`}
+                                            className={`h-5 w-5 rounded border-slate-300 ${disabled ? 'text-green-500 opacity-60 cursor-not-allowed' : 'text-sky-600'}`}
                                             aria-label={`Make PO for ${r.id}`}
                                         />
                                     </div>
