@@ -188,7 +188,7 @@ export default function NonErpItemSection({
         <form onSubmit={handleSubmit} className="space-y-5">
             <Card className="p-5 space-y-5">
                 <div>
-                    <h2 className="text-lg font-semibold">Tambah Item (Non-ERP)</h2>
+                    <h2 className="text-lg font-semibold">Tambah Item</h2>
                     <p className="text-sm text-slate-500">Isi data item internal (MID) untuk pemasok Non-ERP.</p>
                 </div>
 
