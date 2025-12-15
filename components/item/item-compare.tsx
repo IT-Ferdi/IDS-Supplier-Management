@@ -58,7 +58,11 @@ export default function ItemCompare({ mid }: ItemCompareProps) {
         transactions.forEach((tx: Transaction) => {
             if (!Array.isArray(tx.items)) return;
             tx.items.forEach((it) => {
-                if (it.item_code?.toLowerCase() === mid.toLowerCase()) {
+                if (
+                    typeof it.item_code === 'string' &&
+                    typeof mid === 'string' &&
+                    it.item_code.toLowerCase() === mid.toLowerCase()
+                ) {
                     rows.push({
                         supplier: tx.supplier,
                         supplier_name: tx.supplier_name ?? '',

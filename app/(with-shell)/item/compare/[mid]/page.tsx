@@ -1,5 +1,11 @@
 import ItemCompare from '@/components/item/item-compare';
 
-export default function ComparePage({ params }: { params: { mid: string } }) {
-    return <ItemCompare mid={params.mid} />;
+export default async function ComparePage({
+    params,
+}: {
+    params: Promise<{ mid: string }>;
+}) {
+    const { mid } = await params;
+
+    return <ItemCompare mid={mid} />;
 }
