@@ -40,48 +40,70 @@ export default function ItemDetailPanel({
         fetchSuppliers();
     }, []);
 
-    // Filter transaksi berdasarkan item.id
-    const filteredTransactions = useMemo(() => {
+    const filteredItems = useMemo(() => {
         if (!item) return [];
-        return transactions.filter(
-            (tx: Transaction) =>
-                tx.item_code?.toLowerCase() === item.id.toLowerCase()
-        );
+
+        const rows: {
+            supplier: string;
+            supplier_name: string;
+            transaction_date: string;
+            rate: number;
+            qty: number;
+            uom?: string;
+        }[] = [];
+
+        transactions.forEach((tx: Transaction) => {
+            if (!Array.isArray(tx.items)) return;
+
+            tx.items.forEach((it) => {
+                if (
+                    typeof it.item_code === 'string' &&
+                    it.item_code.toLowerCase() === item.id.toLowerCase()
+                ) {
+                    rows.push({
+                        supplier: tx.supplier,
+                        supplier_name: tx.supplier_name ?? 'Unknown',
+                        transaction_date: tx.transaction_date,
+                        rate: Number(it.rate ?? 0),
+                        qty: Number(it.qty ?? 0),
+                        uom: it.uom ?? undefined,
+                    });
+                }
+            });
+        });
+
+        return rows;
     }, [transactions, item]);
 
     // Ambil transaksi terbaru tiap supplier
     const latestBySupplier = useMemo(() => {
-        const grouped: Record<string, Transaction[]> = {};
-        filteredTransactions.forEach((tx) => {
-            if (!grouped[tx.supplier]) grouped[tx.supplier] = [];
-            grouped[tx.supplier].push(tx);
+        const grouped: Record<string, typeof filteredItems> = {};
+
+        filteredItems.forEach((r) => {
+            if (!grouped[r.supplier]) grouped[r.supplier] = [];
+            grouped[r.supplier].push(r);
         });
 
-        const latest: {
-            supplier_id: string;
-            supplier_name: string;
-            last_transaction: string;
-            rate_per_unit: number;
-        }[] = [];
+        return Object.entries(grouped).map(([supplier_id, rows]) => {
+            const latest = rows
+                .slice()
+                .sort(
+                    (a, b) =>
+                        new Date(b.transaction_date).getTime() -
+                        new Date(a.transaction_date).getTime()
+                )[0];
 
-        Object.entries(grouped).forEach(([supplier_id, txs]) => {
-            const sorted = txs.sort(
-                (a, b) =>
-                    new Date(b.transaction_date).getTime() -
-                    new Date(a.transaction_date).getTime()
-            );
-            const latestTx = sorted[0];
-            const ratePerUnit = latestTx.qty ? (latestTx.qty > 0 ? latestTx.qty : 0) : 0;
-            latest.push({
+            return {
                 supplier_id,
-                supplier_name: latestTx.supplier_name ?? "Unknown",
-                last_transaction: latestTx.transaction_date,
-                rate_per_unit: ratePerUnit ?? 0,
-            });
+                supplier_name: latest.supplier_name,
+                last_transaction: latest.transaction_date,
+                rate_per_unit: latest.rate,
+                qty: latest.qty,
+                uom: latest.uom,
+            };
         });
+    }, [filteredItems]);
 
-        return latest;
-    }, [filteredTransactions]);
 
     // Gabungkan dengan data supplier
     const suppliersWithDetail = useMemo(() => {
@@ -205,7 +227,7 @@ export default function ItemDetailPanel({
                                                         <p className="text-sm text-slate-600 mt-1">
                                                             Price:{' '}
                                                             <span className="font-semibold text-sky-600">
-                                                                Rp {s.rate_per_unit.toLocaleString('id-ID')}
+                                                                Rp {s.rate_per_unit.toLocaleString('id-ID')} / {s.uom || 'unit'}
                                                             </span>
                                                         </p>
                                                     </div>
